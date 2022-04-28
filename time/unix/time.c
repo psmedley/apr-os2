@@ -126,7 +126,7 @@ APR_DECLARE(apr_status_t) apr_time_exp_gmt(apr_time_exp_t *result,
 APR_DECLARE(apr_status_t) apr_time_exp_lt(apr_time_exp_t *result,
                                                 apr_time_t input)
 {
-#if defined(__EMX__)
+#if defined(__EMX__) && !defined(__KLIBC__)
     /* EMX gcc (OS/2) has a timezone global we can use */
     return apr_time_exp_tz(result, input, -timezone);
 #else
@@ -247,7 +247,7 @@ APR_DECLARE(void) apr_sleep(apr_interval_time_t t)
 #endif
 }
 
-#ifdef OS2
+#if defined(OS2) 
 APR_DECLARE(apr_status_t) apr_os2_time_to_apr_time(apr_time_t *result,
                                                    FDATE os2date,
                                                    FTIME os2time)

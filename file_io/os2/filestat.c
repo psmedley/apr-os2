@@ -22,7 +22,6 @@
 #include <sys/time.h>
 #include "apr_strings.h"
 
-
 static void FS3_to_finfo(apr_finfo_t *finfo, FILESTATUS3 *fstatus)
 {
     finfo->protection = (fstatus->attrFile & FILE_READONLY) ? 0x555 : 0x777;
@@ -84,7 +83,123 @@ static apr_status_t handle_type(apr_filetype_e *ftype, HFILE file)
     return APR_FROM_OS_ERROR(rc);
 }
 
+#ifdef __KLIBC__
+static apr_filetype_e filetype_from_mode(mode_t mode)
+{
+    apr_filetype_e type;
 
+    switch (mode & S_IFMT) {
+    case S_IFREG:
+        type = APR_REG;  break;
+    case S_IFDIR:
+        type = APR_DIR;  break;
+    case S_IFLNK:
+        type = APR_LNK;  break;
+    case S_IFCHR:
+        type = APR_CHR;  break;
+    case S_IFBLK:
+        type = APR_BLK;  break;
+#if defined(S_IFFIFO)
+    case S_IFFIFO:
+        type = APR_PIPE; break;
+#endif
+#if !defined(BEOS) && defined(S_IFSOCK)
+    case S_IFSOCK:
+        type = APR_SOCK; break;
+#endif
+
+    default:
+	/* Work around missing S_IFxxx values above
+         * for Linux et al.
+         */
+#if !defined(S_IFFIFO) && defined(S_ISFIFO)
+    	if (S_ISFIFO(mode)) {
+            type = APR_PIPE;
+	} else
+#endif
+#if !defined(BEOS) && !defined(S_IFSOCK) && defined(S_ISSOCK)
+    	if (S_ISSOCK(mode)) {
+            type = APR_SOCK;
+	} else
+#endif
+        type = APR_UNKFILE;
+    }
+    return type;
+}
+
+static void fill_out_finfo(apr_finfo_t *finfo, struct_stat *info,
+                           apr_int32_t wanted)
+{ 
+    finfo->valid = APR_FINFO_MIN | APR_FINFO_IDENT | APR_FINFO_NLINK
+                 | APR_FINFO_OWNER | APR_FINFO_PROT;
+    finfo->protection = apr_unix_mode2perms(info->st_mode);
+    finfo->filetype = filetype_from_mode(info->st_mode);
+    finfo->user = info->st_uid;
+    finfo->group = info->st_gid;
+    finfo->size = info->st_size;
+    finfo->inode = info->st_ino;
+    finfo->device = info->st_dev;
+    finfo->nlink = info->st_nlink;
+    apr_time_ansi_put(&finfo->atime, info->st_atime);
+#ifdef HAVE_STRUCT_STAT_ST_ATIM_TV_NSEC
+    finfo->atime += info->st_atim.tv_nsec / APR_TIME_C(1000);
+#elif defined(HAVE_STRUCT_STAT_ST_ATIMENSEC)
+    finfo->atime += info->st_atimensec / APR_TIME_C(1000);
+#elif defined(HAVE_STRUCT_STAT_ST_ATIME_N)
+    finfo->ctime += info->st_atime_n / APR_TIME_C(1000);
+#endif
+
+    apr_time_ansi_put(&finfo->mtime, info->st_mtime);
+#ifdef HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
+    finfo->mtime += info->st_mtim.tv_nsec / APR_TIME_C(1000);
+#elif defined(HAVE_STRUCT_STAT_ST_MTIMENSEC)
+    finfo->mtime += info->st_mtimensec / APR_TIME_C(1000);
+#elif defined(HAVE_STRUCT_STAT_ST_MTIME_N)
+    finfo->ctime += info->st_mtime_n / APR_TIME_C(1000);
+#endif
+
+    apr_time_ansi_put(&finfo->ctime, info->st_ctime);
+#ifdef HAVE_STRUCT_STAT_ST_CTIM_TV_NSEC
+    finfo->ctime += info->st_ctim.tv_nsec / APR_TIME_C(1000);
+#elif defined(HAVE_STRUCT_STAT_ST_CTIMENSEC)
+    finfo->ctime += info->st_ctimensec / APR_TIME_C(1000);
+#elif defined(HAVE_STRUCT_STAT_ST_CTIME_N)
+    finfo->ctime += info->st_ctime_n / APR_TIME_C(1000);
+#endif
+
+#ifdef HAVE_STRUCT_STAT_ST_BLOCKS
+#ifdef DEV_BSIZE
+    finfo->csize = (apr_off_t)info->st_blocks * (apr_off_t)DEV_BSIZE;
+#else
+    finfo->csize = (apr_off_t)info->st_blocks * (apr_off_t)512;
+#endif
+    finfo->valid |= APR_FINFO_CSIZE;
+#endif
+}
+
+apr_status_t apr_file_info_get_locked(apr_finfo_t *finfo, apr_int32_t wanted,
+                                      apr_file_t *thefile)
+{
+
+    struct_stat info;
+
+    if (thefile->buffered) {
+        apr_status_t rv = apr_file_flush_locked(thefile);
+        if (rv != APR_SUCCESS)
+            return rv;
+    }
+
+    if (fstat(thefile->filedes, &info) == 0) {
+        finfo->pool = thefile->pool;
+        finfo->fname = thefile->fname;
+        fill_out_finfo(finfo, &info, wanted);
+        return (wanted & ~finfo->valid) ? APR_INCOMPLETE : APR_SUCCESS;
+    }
+    else {
+        return errno;
+    }
+}
+#endif
 
 APR_DECLARE(apr_status_t) apr_file_info_get(apr_finfo_t *finfo, apr_int32_t wanted, 
                                    apr_file_t *thefile)
@@ -130,6 +245,29 @@ APR_DECLARE(apr_status_t) apr_file_perms_set(const char *fname, apr_fileperms_t 
     return APR_ENOTIMPL;
 }
 
+/* duplciated from dir_make_recurse.c */
+
+#define IS_SEP(c) (c == '/' || c == '\\')
+
+/* Remove trailing separators that don't affect the meaning of PATH. */
+static const char *path_canonicalize(const char *path, apr_pool_t *pool)
+{
+    /* At some point this could eliminate redundant components.  For
+     * now, it just makes sure there is no trailing slash. */
+    apr_size_t len = strlen(path);
+    apr_size_t orig_len = len;
+
+    while ((len > 0) && IS_SEP(path[len - 1])) {
+        len--;
+    }
+
+    if (len != orig_len) {
+        return apr_pstrndup(pool, path, len);
+    }
+    else {
+        return path;
+    }
+}
 
 APR_DECLARE(apr_status_t) apr_stat(apr_finfo_t *finfo, const char *fname,
                               apr_int32_t wanted, apr_pool_t *cont)
@@ -140,8 +278,10 @@ APR_DECLARE(apr_status_t) apr_stat(apr_finfo_t *finfo, const char *fname,
     finfo->protection = 0;
     finfo->filetype = APR_NOFILE;
     finfo->name = NULL;
-    rc = DosQueryPathInfo(fname, FIL_STANDARD, &fstatus, sizeof(fstatus));
-    
+
+    /* remove trailing / from any paths, otherwise DosQueryPathInfo will fail */
+    const char *newfname = path_canonicalize(fname, cont);
+    rc = DosQueryPathInfo(newfname, FIL_STANDARD, &fstatus, sizeof(fstatus));
     if (rc == 0) {
         FS3_to_finfo(finfo, &fstatus);
         finfo->fname = fname;
@@ -172,7 +312,12 @@ APR_DECLARE(apr_status_t) apr_stat(apr_finfo_t *finfo, const char *fname,
         return APR_FROM_OS_ERROR(rc);
     }
 
+#ifndef __INNOTEK_LIBC__
     return (wanted & ~finfo->valid) ? APR_INCOMPLETE : APR_SUCCESS;
+#else
+    return APR_SUCCESS;
+#endif
+
 }
 
 

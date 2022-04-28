@@ -193,7 +193,7 @@ static apr_status_t impl_pollset_add(apr_pollset_t *pollset,
 #else
         if ((pollset->flags & APR_POLLSET_WAKEABLE) &&
             descriptor->desc.f == pollset->wakeup_pipe[0])
-            pollset->p->pollset[pollset->nelts].fd = (SOCKET)descriptor->desc.f->filedes;
+            pollset->p->pollset[pollset->nelts].fd = /*(SOCKET)*/descriptor->desc.f->filedes;
         else
             return APR_EBADF;
 #endif

@@ -31,7 +31,7 @@ APR_DECLARE(apr_int32_t) apr_file_flags_get(apr_file_t *f)
     return f->flags;
 }
 
-#if !defined(OS2) && !defined(WIN32)
+#if (!defined(OS2) && !defined(WIN32)) || defined (__KLIBC__)
 mode_t apr_unix_perms2mode(apr_fileperms_t perms)
 {
     mode_t mode = 0;

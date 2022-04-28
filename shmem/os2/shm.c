@@ -46,7 +46,12 @@ APR_DECLARE(apr_status_t) apr_shm_create(apr_shm_t **m,
         flags |= OBJ_GETTABLE;
     }
 
-    rc = DosAllocSharedMem(&(newm->memblock), name, reqsize, flags);
+    /* First try to allocate shared memory in HMA */
+    rc = DosAllocSharedMem(&(newm->memblock), name, reqsize, flags | OBJ_ANY);
+
+    if (rc) {
+        rc = DosAllocSharedMem(&(newm->memblock), name, reqsize, flags);
+    }
 
     if (rc) {
         return APR_OS2_STATUS(rc);
@@ -67,7 +72,15 @@ APR_DECLARE(apr_status_t) apr_shm_create_ex(apr_shm_t **m,
 
 APR_DECLARE(apr_status_t) apr_shm_destroy(apr_shm_t *m)
 {
-    DosFreeMem(m->memblock);
+    int rc;
+
+    rc = DosFreeMem(m->memblock);
+
+    // MKG: added might not be good
+    if (rc) {
+        return APR_OS2_STATUS(rc);
+    }
+
     return APR_SUCCESS;
 }
 
@@ -92,9 +105,16 @@ APR_DECLARE(apr_status_t) apr_shm_attach(apr_shm_t **m,
     ULONG flags = PAG_READ|PAG_WRITE;
 
     newm->pool = pool;
+
+    //MKG: should be able to get unnamed memory ????
+    if (filename) {
+
     name = apr_pstrcat(pool, "\\SHAREMEM\\", filename, NULL);
 
     rc = DosGetNamedSharedMem(&(newm->memblock), name, flags);
+    } else {
+        rc = DosGetSharedMem(&(newm->memblock), flags);
+    }
 
     if (rc) {
         return APR_FROM_OS_ERROR(rc);

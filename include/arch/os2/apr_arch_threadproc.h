@@ -16,6 +16,7 @@
 
 #include "apr_thread_proc.h"
 #include "apr_file_io.h"
+#include <pthread.h>
 
 #ifndef THREAD_PROC_H
 #define THREAD_PROC_H
@@ -34,9 +35,10 @@ struct apr_threadattr_t {
 struct apr_thread_t {
     apr_pool_t *pool;
     struct apr_threadattr_t *attr;
+    pthread_t *td;
     unsigned long tid;
-    apr_thread_start_t func;
     void *data;
+    apr_thread_start_t func;
     apr_status_t exitval;
 };
 

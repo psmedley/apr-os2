@@ -40,6 +40,10 @@
 #include <unistd.h>     /* for getpid and sysconf */
 #endif
 
+#ifdef __KLIBC__
+#include <malloc.h>
+#endif
+
 #if APR_ALLOCATOR_GUARD_PAGES && !APR_ALLOCATOR_USES_MMAP
 #define APR_ALLOCATOR_USES_MMAP   1
 #endif
@@ -407,6 +411,8 @@ apr_memnode_t *allocator_alloc(apr_allocator_t *allocator, apr_size_t in_size)
 #elif APR_ALLOCATOR_USES_MMAP
     if ((node = mmap(NULL, size, PROT_READ|PROT_WRITE,
                      MAP_PRIVATE|MAP_ANON, -1, 0)) == MAP_FAILED)
+#elif defined(__KLIBC__) /* must use _tmalloc here or calls to DosReadQueue fail */
+    if ((node = _tmalloc(size)) == NULL)
 #else
     if ((node = malloc(size)) == NULL)
 #endif
@@ -971,7 +977,8 @@ APR_DECLARE(void) apr_pool_clear(apr_pool_t *pool)
     }
 
     *active->ref = NULL;
-    allocator_free(pool->allocator, active->next);
+    if (active->next)
+        allocator_free(pool->allocator, active->next);
     active->next = active;
     active->ref = &active->next;
 

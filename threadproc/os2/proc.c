@@ -27,6 +27,7 @@
 #include "apr_portable.h"
 #include "apr_strings.h"
 #include "apr_signal.h"
+#include "apr_random.h"
 #include <signal.h>
 #include <string.h>
 #include <sys/wait.h>
@@ -41,22 +42,13 @@ static apr_file_t no_file = { NULL, -1, };
 
 APR_DECLARE(apr_status_t) apr_procattr_create(apr_procattr_t **new, apr_pool_t *pool)
 {
-    (*new) = (apr_procattr_t *)apr_palloc(pool, 
-              sizeof(apr_procattr_t));
+    (*new) = (apr_procattr_t *)apr_pcalloc(pool, sizeof(apr_procattr_t));
 
     if ((*new) == NULL) {
         return APR_ENOMEM;
     }
     (*new)->pool = pool;
-    (*new)->parent_in = NULL;
-    (*new)->child_in = NULL;
-    (*new)->parent_out = NULL;
-    (*new)->child_out = NULL;
-    (*new)->parent_err = NULL;
-    (*new)->child_err = NULL;
-    (*new)->currdir = NULL; 
     (*new)->cmdtype = APR_PROGRAM;
-    (*new)->detached = FALSE;
     return APR_SUCCESS;
 }
 
@@ -110,13 +102,14 @@ APR_DECLARE(apr_status_t) apr_procattr_io_set(apr_procattr_t *attr,
     return APR_SUCCESS;
 }
 
-APR_DECLARE(apr_status_t) apr_procattr_child_in_set(apr_procattr_t *attr, apr_file_t *child_in,
-                                   apr_file_t *parent_in)
+APR_DECLARE(apr_status_t) apr_procattr_child_in_set(apr_procattr_t *attr,
+                                                    apr_file_t *child_in,
+                                                    apr_file_t *parent_in)
 {
-    apr_status_t rv;
+    apr_status_t rv = APR_SUCCESS;
 
     if (attr->child_in == NULL && attr->parent_in == NULL
-            && child_in == NULL && parent_in == NULL)
+           && child_in == NULL && parent_in == NULL)
         if ((rv = apr_file_pipe_create(&attr->child_in, &attr->parent_in,
                                        attr->pool)) == APR_SUCCESS)
             rv = apr_file_inherit_unset(attr->parent_in);
@@ -133,16 +126,20 @@ APR_DECLARE(apr_status_t) apr_procattr_child_in_set(apr_procattr_t *attr, apr_fi
     }
 
     if (parent_in != NULL && rv == APR_SUCCESS) {
-        rv = apr_file_dup(&attr->parent_in, parent_in, attr->pool);
+        if (attr->parent_in)
+            rv = apr_file_dup2(attr->parent_in, parent_in, attr->pool);
+        else
+            rv = apr_file_dup(&attr->parent_in, parent_in, attr->pool);
     }
 
     return rv;
 }
 
-APR_DECLARE(apr_status_t) apr_procattr_child_out_set(apr_procattr_t *attr, apr_file_t *child_out,
+APR_DECLARE(apr_status_t) apr_procattr_child_out_set(apr_procattr_t *attr,
+                                                     apr_file_t *child_out,
                                                      apr_file_t *parent_out)
 {
-    apr_status_t rv;
+    apr_status_t rv = APR_SUCCESS;
 
     if (attr->child_out == NULL && attr->parent_out == NULL
            && child_out == NULL && parent_out == NULL)
@@ -160,23 +157,27 @@ APR_DECLARE(apr_status_t) apr_procattr_child_out_set(apr_procattr_t *attr, apr_f
                 rv = apr_file_inherit_set(attr->child_out);
         }
     }
-  
+
     if (parent_out != NULL && rv == APR_SUCCESS) {
-        rv = apr_file_dup(&attr->parent_out, parent_out, attr->pool);
+        if (attr->parent_out)
+            rv = apr_file_dup2(attr->parent_out, parent_out, attr->pool);
+        else
+            rv = apr_file_dup(&attr->parent_out, parent_out, attr->pool);
     }
 
     return rv;
 }
 
-APR_DECLARE(apr_status_t) apr_procattr_child_err_set(apr_procattr_t *attr, apr_file_t *child_err,
+APR_DECLARE(apr_status_t) apr_procattr_child_err_set(apr_procattr_t *attr,
+                                                     apr_file_t *child_err,
                                                      apr_file_t *parent_err)
 {
-    apr_status_t rv;
+    apr_status_t rv = APR_SUCCESS;
 
     if (attr->child_err == NULL && attr->parent_err == NULL
            && child_err == NULL && parent_err == NULL)
         if ((rv = apr_file_pipe_create(&attr->parent_err, &attr->child_err,
-                                       attr->pool)) == APR_SUCCESS)
+                                      attr->pool)) == APR_SUCCESS)
             rv = apr_file_inherit_unset(attr->parent_err);
 
     if (child_err != NULL && rv == APR_SUCCESS) {
@@ -189,20 +190,24 @@ APR_DECLARE(apr_status_t) apr_procattr_child_err_set(apr_procattr_t *attr, apr_f
                 rv = apr_file_inherit_set(attr->child_err);
         }
     }
-  
     if (parent_err != NULL && rv == APR_SUCCESS) {
-        rv = apr_file_dup(&attr->parent_err, parent_err, attr->pool);
+        if (attr->parent_err)
+            rv = apr_file_dup2(attr->parent_err, parent_err, attr->pool);
+        else
+            rv = apr_file_dup(&attr->parent_err, parent_err, attr->pool);
     }
 
     return rv;
 }
 
-APR_DECLARE(apr_status_t) apr_procattr_dir_set(apr_procattr_t *attr, const char *dir)
+APR_DECLARE(apr_status_t) apr_procattr_dir_set(apr_procattr_t *attr,
+                                               const char *dir)
 {
     attr->currdir = apr_pstrdup(attr->pool, dir);
     if (attr->currdir) {
         return APR_SUCCESS;
     }
+
     return APR_ENOMEM;
 }
 
@@ -222,21 +227,26 @@ APR_DECLARE(apr_status_t) apr_procattr_detach_set(apr_procattr_t *attr, apr_int3
 APR_DECLARE(apr_status_t) apr_proc_fork(apr_proc_t *proc, apr_pool_t *pool)
 {
     int pid;
-    
+
     if ((pid = fork()) < 0) {
         return errno;
     }
     else if (pid == 0) {
         proc->pid = pid;
-        proc->in = NULL; 
-        proc->out = NULL; 
-        proc->err = NULL; 
+        proc->in = NULL;
+        proc->out = NULL;
+        proc->err = NULL;
+
+        apr_random_after_fork(proc);
+
         return APR_INCHILD;
     }
+
     proc->pid = pid;
-    proc->in = NULL; 
-    proc->out = NULL; 
-    proc->err = NULL; 
+    proc->in = NULL;
+    proc->out = NULL;
+    proc->err = NULL;
+
     return APR_INPARENT;
 }
 
@@ -273,7 +283,6 @@ static char *double_quotes(apr_pool_t *pool, const char *str)
 APR_DECLARE(apr_status_t) apr_procattr_child_errfn_set(apr_procattr_t *attr,
                                                        apr_child_errfn_t *errfn)
 {
-    /* won't ever be called on this platform, so don't save the function pointer */
     return APR_SUCCESS;
 }
 
@@ -282,7 +291,6 @@ APR_DECLARE(apr_status_t) apr_procattr_child_errfn_set(apr_procattr_t *attr,
 APR_DECLARE(apr_status_t) apr_procattr_error_check_set(apr_procattr_t *attr,
                                                        apr_int32_t chk)
 {
-    /* won't ever be used on this platform, so don't save the flag */
     return APR_SUCCESS;
 }
 
@@ -380,7 +388,7 @@ APR_DECLARE(apr_status_t) apr_proc_create(apr_proc_t *proc, const char *progname
         strcpy(interpreter, "#!" SHELL_PATH);
         extra_arg = "/C";
     } else if (stricmp(extension, ".exe") != 0) {
-        status = apr_file_open(&progfile, progname, APR_READ|APR_BUFFERED, 0, pool);
+        status = apr_file_open(&progfile, progname, APR_READ|APR_FOPEN_BUFFERED, 0, pool);
 
         if (status != APR_SUCCESS && APR_STATUS_IS_ENOENT(status)) {
             progname = apr_pstrcat(pool, progname, ".exe", NULL);
@@ -504,10 +512,11 @@ APR_DECLARE(apr_status_t) apr_proc_create(apr_proc_t *proc, const char *progname
     }
 
     if (attr->child_in) {
+#if 0 /* try and fix cgi post issues */
         if (attr->child_in->filedes != -1) {
             apr_file_close(attr->child_in);
         }
-
+#endif
         dup = STDIN_FILENO;
         DosDupHandle(save_in, &dup);
         DosClose(save_in);
@@ -537,9 +546,8 @@ APR_DECLARE(apr_status_t) apr_proc_create(apr_proc_t *proc, const char *progname
         DosExitCritSec();
 
     return status;
+
 }
-
-
 
 static void proces_result_codes(RESULTCODES codes, 
                                 int *exitcode, 
@@ -587,7 +595,6 @@ static void proces_result_codes(RESULTCODES codes,
             break;
         }
     }
-
     if (exitcode) {
         *exitcode = result;
     }
@@ -599,6 +606,7 @@ static void proces_result_codes(RESULTCODES codes,
 
 
 
+#if 0
 APR_DECLARE(apr_status_t) apr_proc_wait_all_procs(apr_proc_t *proc,
                                                   int *exitcode,
                                                   apr_exit_why_e *exitwhy,
@@ -624,6 +632,7 @@ APR_DECLARE(apr_status_t) apr_proc_wait_all_procs(apr_proc_t *proc,
 
 
 
+#if 1
 APR_DECLARE(apr_status_t) apr_proc_wait(apr_proc_t *proc,
                                         int *exitcode, apr_exit_why_e *exitwhy,
                                         apr_wait_how_e waithow)
@@ -642,8 +651,150 @@ APR_DECLARE(apr_status_t) apr_proc_wait(apr_proc_t *proc,
 
     return APR_OS2_STATUS(rc);
 } 
+#else
+APR_DECLARE(apr_status_t) apr_proc_wait(apr_proc_t *proc,
+                                        int *exitcode, apr_exit_why_e *exitwhy,
+                                        apr_wait_how_e waithow)
+{
+    RESULTCODES codes;
+    ULONG rc;
+    PID pid;
+    rc = DosWaitChild(DCWA_PROCESS, waithow == APR_WAIT ? DCWW_WAIT : DCWW_NOWAIT, &codes, &pid, proc->pid);
+//fprintf(stderr,"rc of DosWaitChild= %d\n",rc);
+    if (rc == 0) {
+        proces_result_codes(codes, exitcode, exitwhy);
+        return APR_CHILD_DONE;
+    } else if (rc == ERROR_CHILD_NOT_COMPLETE) {
+        return APR_CHILD_NOTDONE;
+    } 
 
+    if (rc==128){
+      pid_t pstatus;
+      int waitpid_options = WUNTRACED;
+      int exit_int;
+      int ignore;
+      apr_exit_why_e ignorewhy;
 
+      if (exitcode == NULL) {
+          exitcode = &ignore;
+      }
+
+      if (exitwhy == NULL) {
+          exitwhy = &ignorewhy;
+      }
+
+      if (waithow != APR_WAIT) {
+          waitpid_options |= WNOHANG;
+      }
+
+      do {
+          pstatus = waitpid(proc->pid, &exit_int, waitpid_options);
+      } while (pstatus < 0 && errno == EINTR);
+
+      if (pstatus > 0) {
+          proc->pid = pstatus;
+
+          if (WIFEXITED(exit_int)) {
+              *exitwhy = APR_PROC_EXIT;
+              *exitcode = WEXITSTATUS(exit_int);
+//fprintf(stderr,"exitwhy = %d, exitcode = %d\n",APR_PROC_EXIT, WEXITSTATUS(exit_int));
+          }
+          else if (WIFSIGNALED(exit_int)) {
+              *exitwhy = APR_PROC_SIGNAL;
+#ifdef WCOREDUMP
+              if (WCOREDUMP(exit_int)) {
+                  *exitwhy |= APR_PROC_SIGNAL_CORE;
+              }
+#endif
+
+              *exitcode = WTERMSIG(exit_int);
+          }
+          else {
+              /* unexpected condition */
+              return APR_EGENERAL;
+          }
+
+          return APR_CHILD_DONE;
+      }
+      else if (pstatus == 0) {
+          return APR_CHILD_NOTDONE;
+      }
+
+      return errno;
+
+    }
+    return APR_OS2_STATUS(rc);
+} 
+#endif
+#else
+APR_DECLARE(apr_status_t) apr_proc_wait_all_procs(apr_proc_t *proc,
+                                                  int *exitcode,
+                                                  apr_exit_why_e *exitwhy,
+                                                  apr_wait_how_e waithow,
+                                                  apr_pool_t *p)
+{
+    proc->pid = -1;
+    return apr_proc_wait(proc, exitcode, exitwhy, waithow);
+}
+
+APR_DECLARE(apr_status_t) apr_proc_wait(apr_proc_t *proc,
+                                        int *exitcode, apr_exit_why_e *exitwhy,
+                                        apr_wait_how_e waithow)
+{
+    pid_t pstatus;
+    int waitpid_options = WUNTRACED;
+    int exit_int;
+    int ignore;
+    apr_exit_why_e ignorewhy;
+
+    if (exitcode == NULL) {
+        exitcode = &ignore;
+    }
+
+    if (exitwhy == NULL) {
+        exitwhy = &ignorewhy;
+    }
+
+    if (waithow != APR_WAIT) {
+        waitpid_options |= WNOHANG;
+    }
+
+    do {
+        pstatus = waitpid(proc->pid, &exit_int, waitpid_options);
+    } while (pstatus < 0 && errno == EINTR);
+
+    if (pstatus > 0) {
+        proc->pid = pstatus;
+
+        if (WIFEXITED(exit_int)) {
+            *exitwhy = APR_PROC_EXIT;
+            *exitcode = WEXITSTATUS(exit_int);
+        }
+        else if (WIFSIGNALED(exit_int)) {
+            *exitwhy = APR_PROC_SIGNAL;
+
+#ifdef WCOREDUMP
+            if (WCOREDUMP(exit_int)) {
+                *exitwhy |= APR_PROC_SIGNAL_CORE;
+            }
+#endif
+
+            *exitcode = WTERMSIG(exit_int);
+        }
+        else {
+            /* unexpected condition */
+            return APR_EGENERAL;
+        }
+
+        return APR_CHILD_DONE;
+    }
+    else if (pstatus == 0) {
+        return APR_CHILD_NOTDONE;
+    }
+
+    return errno;
+}
+#endif
 
 APR_DECLARE(apr_status_t) apr_proc_detach(int daemonize)
 {
@@ -670,3 +821,11 @@ APR_DECLARE(apr_status_t) apr_procattr_perms_set_register(apr_procattr_t *attr,
 {
     return APR_ENOTIMPL;
 }
+
+APR_DECLARE(apr_status_t) apr_procattr_limit_set(apr_procattr_t *attr,
+                                                 apr_int32_t what,
+                                                 struct rlimit *limit)
+{
+    return APR_ENOTIMPL;
+}
+

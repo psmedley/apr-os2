@@ -51,6 +51,7 @@ static apr_status_t file_dup(apr_file_t **new_file, apr_file_t *old_file, apr_po
     dup_file->flags = old_file->flags & ~APR_INHERIT;
     /* TODO - dup pipes correctly */
     dup_file->pipe = old_file->pipe;
+    dup_file->ungetchar = old_file->ungetchar;
 
     if (*new_file == NULL) {
         apr_pool_cleanup_register(dup_file->pool, dup_file, apr_file_cleanup,
@@ -60,7 +61,6 @@ static apr_status_t file_dup(apr_file_t **new_file, apr_file_t *old_file, apr_po
 
     return APR_SUCCESS;
 }
-
 
 
 APR_DECLARE(apr_status_t) apr_file_dup(apr_file_t **new_file, apr_file_t *old_file, apr_pool_t *p)

@@ -266,7 +266,7 @@ APR_DECLARE(apr_status_t) apr_generate_random_bytes(unsigned char *buf,
 
 #elif defined(OS2)
 
-    static UCHAR randbyte();
+    UCHAR randbyte();
     unsigned int idx;
 
     for (idx=0; idx<length; idx++)

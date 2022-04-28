@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#ifndef APR_ARCH_OS2CALLS_H
+#define APR_ARCH_OS2CALLS_H
 #include "apr_errno.h"
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -31,7 +33,7 @@ extern int (*apr_os2_ioctl)(int, int, caddr_t, int);
 extern int (*apr_os2_listen)(int, int);
 extern int (*apr_os2_recv)(int, char *, int, int);
 extern int (*apr_os2_send)(int, const char *, int, int);
-extern int (*apr_os2_setsockopt)(int, int, int, char *, int);
+extern int (*apr_os2_setsockopt)(int, int, int, const char *, int);
 extern int (*apr_os2_shutdown)(int, int);
 extern int (*apr_os2_soclose)(int);
 extern int (*apr_os2_writev)(int, struct iovec *, int);
@@ -57,3 +59,5 @@ extern int (*apr_os2_recvfrom)(int, char *, int, int, struct sockaddr *, int *);
 #define writev apr_os2_writev
 #define sendto apr_os2_sendto
 #define recvfrom apr_os2_recvfrom
+
+#endif /* !defined APR_ARCH_OS2CALLS_H */

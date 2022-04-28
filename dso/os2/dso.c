@@ -18,6 +18,7 @@
 #include "apr_strings.h"
 #include "apr_portable.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #if APR_HAS_DSO
@@ -50,13 +51,23 @@ APR_DECLARE(apr_status_t) apr_dso_load(apr_dso_handle_t **res_handle, const char
     (*res_handle)->load_error = APR_SUCCESS;
     (*res_handle)->failed_module = NULL;
 
-    if ((rc = DosLoadModule(failed_module, sizeof(failed_module), path, &handle)) != 0) {
+    rc = DosLoadModule(failed_module, sizeof(failed_module), path, &handle);
+
+   if ((rc != 0)&&(rc!=87)) {
         (*res_handle)->load_error = APR_FROM_OS_ERROR(rc);
         (*res_handle)->failed_module = apr_pstrdup(ctx, failed_module);
         return APR_FROM_OS_ERROR(rc);
     }
 
+   if (rc==87){
+        int rc2;
+        HMODULE handle2;
+        rc2=DosQueryModuleHandle(path,&handle2);
+        (*res_handle)->handle  = handle2;
+        }
+   if (rc==0) 
     (*res_handle)->handle  = handle;
+
     apr_pool_cleanup_register(ctx, *res_handle, dso_cleanup, apr_pool_cleanup_null);
     return APR_SUCCESS;
 }
@@ -80,7 +91,16 @@ APR_DECLARE(apr_status_t) apr_dso_sym(apr_dso_handle_sym_t *ressym,
     if (symname == NULL || ressym == NULL)
         return APR_ESYMNOTFOUND;
 
-    if ((rc = DosQueryProcAddr(handle->handle, 0, symname, &func)) != 0) {
+#if defined(__INNOTEK_LIBC__)
+    void *retval;
+    char *symbol = (char*)malloc(sizeof(char)*(strlen(symname)+2));
+    sprintf(symbol, "_%s", symname);
+    rc = DosQueryProcAddr(handle->handle, 0, symbol, &func);
+    free(symbol);
+#else
+    rc = DosQueryProcAddr(handle->handle, 0, symname, &func);
+#endif
+    if (rc != 0) {
         handle->load_error = APR_FROM_OS_ERROR(rc);
         return handle->load_error;
     }

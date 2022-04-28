@@ -38,6 +38,9 @@ static apr_status_t socket_cleanup(void *sock)
         return APR_EINVALSOCK;
     }
 
+    /* Add this shutdown call. */
+    shutdown (thesocket->socketdes, 2);
+
     if (soclose(thesocket->socketdes) == 0) {
         thesocket->socketdes = -1;
         return APR_SUCCESS;
@@ -82,26 +85,28 @@ APR_DECLARE(apr_status_t) apr_socket_protocol_get(apr_socket_t *sock, int *proto
 APR_DECLARE(apr_status_t) apr_socket_create(apr_socket_t **new, int family, int type,
                                             int protocol, apr_pool_t *cont)
 {
-    int downgrade = (family == AF_UNSPEC);
-    apr_pollfd_t pfd;
-
     if (family == AF_UNSPEC) {
-#if APR_HAVE_IPV6
-        family = AF_INET6;
-#else
         family = AF_INET;
-#endif
     }
 
     alloc_socket(new, cont);
 
-    (*new)->socketdes = socket(family, type, protocol);
-#if APR_HAVE_IPV6
-    if ((*new)->socketdes < 0 && downgrade) {
-        family = AF_INET;
-        (*new)->socketdes = socket(family, type, protocol);
+    switch (protocol) {
+    case 0:
+        (*new)->socketdes = socket(family, type, 0);
+        break;
+    case APR_PROTO_TCP:
+        (*new)->socketdes = socket(family, type, IPPROTO_TCP);
+        break;
+    case APR_PROTO_UDP:
+        (*new)->socketdes = socket(family, type, IPPROTO_UDP);
+        break;
+    case APR_PROTO_SCTP:
+    default:
+        errno = EPROTONOSUPPORT;
+        (*new)->socketdes = -1;
+        break;
     }
-#endif
 
     if ((*new)->socketdes < 0) {
         return APR_OS2_STATUS(sock_errno());
@@ -163,6 +168,7 @@ APR_DECLARE(apr_status_t) apr_socket_accept(apr_socket_t **new,
                                             apr_socket_t *sock,
                                             apr_pool_t *connection_context)
 {
+
     alloc_socket(new, connection_context);
     set_socket_vars(*new, sock->local_addr->sa.sin.sin_family, SOCK_STREAM, sock->protocol);
 
@@ -185,6 +191,7 @@ APR_DECLARE(apr_status_t) apr_socket_accept(apr_socket_t **new,
     if (sock->local_addr->sa.sin.sin_family == AF_INET) {
         (*new)->local_addr->ipaddr_ptr = &(*new)->local_addr->sa.sin.sin_addr;
     }
+
 
     apr_pool_cleanup_register((*new)->pool, (void *)(*new), 
                         socket_cleanup, apr_pool_cleanup_null);
@@ -309,9 +316,38 @@ APR_DECLARE(apr_status_t) apr_os_sock_put(apr_socket_t **sock, apr_os_sock_t *th
     return APR_SUCCESS;
 }
 
+
+/**
+ * Kill cleanup function registered by apr_socket_create
+ * @added 2014-12-27 SHL
+ */
+
+APR_DECLARE(void) apr_sock_cleanup_kill(apr_socket_t *apr_sock)
+{
+    apr_pool_cleanup_kill(apr_sock->pool, (void *)(apr_sock),
+                          socket_cleanup);
+}
+
 APR_POOL_IMPLEMENT_ACCESSOR(socket);
 
+#ifndef __KLIBC__
 APR_IMPLEMENT_INHERIT_SET(socket, inherit, pool, socket_cleanup)
 
 APR_IMPLEMENT_INHERIT_UNSET(socket, inherit, pool, socket_cleanup)
+#else
+/* Sockets cannot be inherited through the standard sockets
+ * inheritence.  WSADuplicateSocket must be used.
+ * This is not trivial to implement.
+ */
+
+APR_DECLARE(apr_status_t) apr_socket_inherit_set(apr_socket_t *socket)    
+{    
+    return APR_ENOTIMPL;
+}    
+
+APR_DECLARE(apr_status_t) apr_socket_inherit_unset(apr_socket_t *socket)    
+{    
+    return APR_ENOTIMPL;
+}    
+#endif
 

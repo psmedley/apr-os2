@@ -28,7 +28,7 @@ static void copy_helper(abts_case *tc, const char *from, const char * to,
     apr_finfo_t copy;
     apr_finfo_t orig;
     apr_finfo_t dest;
-    
+
     dest_rv = apr_stat(&dest, to, APR_FINFO_SIZE, p);
     
     if (!append) {

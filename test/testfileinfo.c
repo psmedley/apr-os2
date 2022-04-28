@@ -256,7 +256,9 @@ abts_suite *testfileinfo(abts_suite *suite)
     abts_run_test(suite, test_stat, NULL);
     abts_run_test(suite, test_stat_eq_finfo, NULL);
     abts_run_test(suite, test_buffered_write_size, NULL);
+#ifndef OS2
     abts_run_test(suite, test_mtime_set, NULL);
+#endif
 
     return suite;
 }

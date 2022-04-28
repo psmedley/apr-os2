@@ -61,7 +61,8 @@ apr_status_t apr_poll_close_wakeup_pipe(apr_file_t **wakeup_pipe)
 
 #else /* !WIN32 */
 
-apr_status_t apr_poll_create_wakeup_pipe(apr_pollfd_t *pfd, apr_file_t **wakeup_pipe)
+apr_status_t apr_poll_create_wakeup_pipe(apr_pool_t *pool, apr_pollfd_t *pfd,
+                                         apr_file_t **wakeup_pipe)
 {
     return APR_ENOTIMPL;
 }

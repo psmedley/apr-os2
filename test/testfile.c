@@ -248,6 +248,7 @@ static void test_seek(abts_case *tc, void *data)
     APR_ASSERT_SUCCESS(tc, "Open test file " FILENAME, rv);
 
     rv = apr_file_read(filetest, str, &nbytes);
+
     ABTS_INT_EQUAL(tc, APR_SUCCESS, rv);
     ABTS_SIZE_EQUAL(tc, strlen(TESTSTR), nbytes);
     ABTS_STR_EQUAL(tc, TESTSTR, str);
@@ -1263,7 +1264,6 @@ abts_suite *testfile(abts_suite *suite)
     abts_run_test(suite, test_fail_read_flush, NULL);
     abts_run_test(suite, test_buffer_set_get, NULL);
     abts_run_test(suite, test_xthread, NULL);
-
     return suite;
 }
 

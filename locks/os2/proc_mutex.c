@@ -85,9 +85,11 @@ APR_DECLARE(apr_status_t) apr_proc_mutex_create(apr_proc_mutex_t **mutex,
     ULONG rc;
     char *semname;
 
+#if 0
     if (mech != APR_LOCK_DEFAULT && mech != APR_LOCK_DEFAULT_TIMED) {
         return APR_ENOTIMPL;
     }
+#endif
 
     new = (apr_proc_mutex_t *)apr_palloc(pool, sizeof(apr_proc_mutex_t));
     new->pool       = pool;
@@ -119,6 +121,13 @@ APR_DECLARE(apr_status_t) apr_proc_mutex_child_init(apr_proc_mutex_t **mutex,
     new->pool       = pool;
     new->owner      = 0;
     new->lock_count = 0;
+
+#ifdef __INNOTEK_LIBC__
+    if (!fname) {
+        /* Reinitializing unnamed mutexes is a noop in the Unix code. */
+        return APR_SUCCESS;
+    }
+#endif
 
     semname = fixed_name(fname, pool);
     rc = DosOpenMutexSem(semname, &(new->hMutex));

@@ -21,6 +21,7 @@
 #include "apr_strings.h"
 #include "apr_arch_inherit.h"
 #include <string.h>
+#include <unistd.h>
 
 apr_status_t apr_file_cleanup(void *thefile)
 {
@@ -28,15 +29,76 @@ apr_status_t apr_file_cleanup(void *thefile)
     return apr_file_close(file);
 }
 
+#ifdef __INNOTEK_LIBC__
+static apr_status_t file_cleanup(apr_file_t *file)
+{
+    apr_status_t rv = APR_SUCCESS;
+
+    if (close(file->filedes) == 0) {
+        file->filedes = -1;
+        if (file->flags & APR_DELONCLOSE) {
+            unlink(file->fname);
+        }
+#if APR_HAS_THREADS
+        if (file->mutex) {
+            rv = apr_thread_mutex_destroy(file->mutex);
+        }
+#endif
+    }
+    else {
+        /* Are there any error conditions other than EINTR or EBADF? */
+        rv = errno;
+    }
+#ifndef WAITIO_USES_POLL
+    if (file->pollset != NULL) {
+        int pollset_rv = apr_pollset_destroy(file->pollset);
+        /* If the file close failed, return its error value,
+         * not apr_pollset_destroy()'s.
+         */
+        if (rv == APR_SUCCESS) {
+            rv = pollset_rv;
+        }
+    }
+#endif /* !WAITIO_USES_POLL */
+    return rv;
+}
+
+apr_status_t apr_unix_file_cleanup(void *thefile)
+{
+    apr_file_t *file = thefile;
+    apr_status_t flush_rv = APR_SUCCESS, rv = APR_SUCCESS;
+
+    if (file->buffered) {
+        flush_rv = apr_file_flush(file);
+    }
+
+    rv = file_cleanup(file);
+
+    return rv != APR_SUCCESS ? rv : flush_rv;
+}
+
+apr_status_t apr_unix_child_file_cleanup(void *thefile)
+{
+    return file_cleanup(thefile);
+}
+#endif
 
 
-APR_DECLARE(apr_status_t) apr_file_open(apr_file_t **new, const char *fname, apr_int32_t flag,  apr_fileperms_t perm, apr_pool_t *pool)
+APR_DECLARE(apr_status_t) apr_file_open(apr_file_t **new, const char *fname,
+                                   apr_int32_t flag, apr_fileperms_t perm,
+                                   apr_pool_t *pool)
 {
     int oflags = 0;
     int mflags = OPEN_FLAGS_FAIL_ON_ERROR|OPEN_SHARE_DENYNONE|OPEN_FLAGS_NOINHERIT;
     int rv;
     ULONG action;
-    apr_file_t *dafile = (apr_file_t *)apr_palloc(pool, sizeof(apr_file_t));
+    ULONG    CurMaxFH      = 0;          /* Current count of handles         */
+    LONG     ReqCount      = 0;          /* Number to adjust file handles    */
+
+    // 2019-06-03 SHL ensure initialized to zeros
+    // apr_file_t *dafile = (apr_file_t *)apr_palloc(pool, sizeof(apr_file_t));
+    apr_file_t *dafile = (apr_file_t *)apr_pcalloc(pool, sizeof(apr_file_t));
+
 
     if (flag & APR_FOPEN_NONBLOCK) {
         return APR_ENOTIMPL;
@@ -89,7 +151,16 @@ APR_DECLARE(apr_status_t) apr_file_open(apr_file_t **new, const char *fname, apr
     }
     
     rv = DosOpen(fname, &(dafile->filedes), &action, 0, 0, oflags, mflags, NULL);
-    
+
+    if (rv == ERROR_TOO_MANY_OPEN_FILES) {
+	rv = DosSetRelMaxFH(&ReqCount,     /* Using 0 here will return the       */
+                      &CurMaxFH);    /* current number of file handles     */
+	ReqCount      = 10L;         /* Want 10 more file handles         */
+	rv = DosSetRelMaxFH(&ReqCount,&CurMaxFH);     /* Change handle maximum */
+
+	rv = DosOpen(fname, &(dafile->filedes), &action, 0, 0, oflags, mflags, NULL);
+    }    
+
     if (rv == 0 && (flag & APR_FOPEN_APPEND)) {
         ULONG newptr;
         rv = DosSetFilePtr(dafile->filedes, 0, FILE_END, &newptr );
@@ -100,7 +171,7 @@ APR_DECLARE(apr_status_t) apr_file_open(apr_file_t **new, const char *fname, apr
     
     if (rv != 0)
         return APR_FROM_OS_ERROR(rv);
-    
+   
     dafile->isopen = TRUE;
     dafile->fname = apr_pstrdup(pool, fname);
     dafile->filePtr = 0;
@@ -108,6 +179,8 @@ APR_DECLARE(apr_status_t) apr_file_open(apr_file_t **new, const char *fname, apr
     dafile->dataRead = 0;
     dafile->direction = 0;
     dafile->pipe = FALSE;
+    dafile->ungetchar = -1;
+
 
     if (!(flag & APR_FOPEN_NOCLEANUP)) {
         apr_pool_cleanup_register(dafile->pool, dafile, apr_file_cleanup, apr_file_cleanup);
@@ -121,19 +194,27 @@ APR_DECLARE(apr_status_t) apr_file_open(apr_file_t **new, const char *fname, apr
 
 APR_DECLARE(apr_status_t) apr_file_close(apr_file_t *file)
 {
-    ULONG rc;
+    ULONG rc,rv;
     apr_status_t status;
     
     if (file && file->isopen) {
         /* XXX: flush here is not mutex protected */
         status = apr_file_flush(file);
+
+	/* 2014-11-18 SHL ensure client sees ERROR_BROKEN_PIPE */
+        if (file->pipe == 1) {
+            DosCloseEventSem(file->pipeSem);
+            DosDisConnectNPipe(file->filedes);
+        }
         rc = DosClose(file->filedes);
     
         if (rc == 0) {
             file->isopen = FALSE;
 
             if (file->flags & APR_FOPEN_DELONCLOSE) {
-                status = APR_FROM_OS_ERROR(DosDelete(file->fname));
+                rv = DosDelete(file->fname);
+                if (rv != 32)
+                    status = APR_FROM_OS_ERROR(rv);
             }
             /* else we return the status of the flush attempt 
              * when all else succeeds
@@ -153,8 +234,17 @@ APR_DECLARE(apr_status_t) apr_file_close(apr_file_t *file)
 
 APR_DECLARE(apr_status_t) apr_file_remove(const char *path, apr_pool_t *pool)
 {
+#if 0
     ULONG rc = DosDelete(path);
     return APR_FROM_OS_ERROR(rc);
+#else
+    if (unlink(path) == 0) {
+        return APR_SUCCESS;
+    }
+    else {
+        return errno;
+    }
+#endif
 }
 
 
@@ -189,20 +279,25 @@ APR_DECLARE(apr_status_t) apr_os_file_put(apr_file_t **file, apr_os_file_t *thef
 {
     apr_os_file_t *dafile = thefile;
 
-    (*file) = apr_palloc(pool, sizeof(apr_file_t));
+    // 2019-06-03 SHL ensure initialized to zeros
+    // (*file) = apr_palloc(pool, sizeof(apr_file_t));
+    (*file) = apr_pcalloc(pool, sizeof(apr_file_t));
     (*file)->pool = pool;
     (*file)->filedes = *dafile;
     (*file)->isopen = TRUE;
     (*file)->eof_hit = FALSE;
     (*file)->flags = flags;
     (*file)->pipe = FALSE;
-    (*file)->buffered = (flags & APR_FOPEN_BUFFERED) > 0;
+    (*file)->ungetchar = -1;
+
+    if (flags & APR_FOPEN_BUFFERED) {
+        (*file)->buffered = 1;
+        (*file)->buffer = apr_palloc(pool, APR_FILE_DEFAULT_BUFSIZE);
+        (*file)->bufsize = APR_FILE_DEFAULT_BUFSIZE;
+    }
 
     if ((*file)->buffered) {
         apr_status_t rv;
-
-        (*file)->buffer = apr_palloc(pool, APR_FILE_DEFAULT_BUFSIZE);
-        (*file)->bufsize = APR_FILE_DEFAULT_BUFSIZE;
         rv = apr_thread_mutex_create(&(*file)->mutex, 0, pool);
 
         if (rv)
@@ -297,8 +392,14 @@ APR_DECLARE(apr_status_t) apr_file_inherit_unset(apr_file_t *thefile)
     rv = DosQueryFHState(thefile->filedes, &state);
 
     if (rv == 0 && (state & OPEN_FLAGS_NOINHERIT) == 0) {
-        rv = DosSetFHState(thefile->filedes, state | OPEN_FLAGS_NOINHERIT);
+/*        rv = DosSetFHState(thefile->filedes, state | OPEN_FLAGS_NOINHERIT);*/
     }
 
     return APR_FROM_OS_ERROR(rv);
+}
+
+APR_DECLARE(apr_status_t) apr_file_link(const char *from_path, 
+                                          const char *to_path)
+{
+    return APR_ENOTIMPL;;
 }

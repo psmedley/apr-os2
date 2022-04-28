@@ -22,7 +22,10 @@
 #include "apr_lib.h"
 #include "apr_portable.h"
 #include "apr_arch_file_io.h"
+//#define INCL_LIBLOADEXCEPTQ
+//#include "exceptq.h"
 #include <stdlib.h>
+
 
 APR_DECLARE(apr_status_t) apr_threadattr_create(apr_threadattr_t **new, apr_pool_t *pool)
 {
@@ -68,8 +71,13 @@ APR_DECLARE(apr_status_t) apr_threadattr_guardsize_set(apr_threadattr_t *attr,
 
 static void apr_thread_begin(void *arg)
 {
+//  EXCEPTIONREGISTRATIONRECORD exRegRec;
   apr_thread_t *thread = (apr_thread_t *)arg;
-  thread->exitval = thread->func(thread, thread->data);
+  // install exception handler (dynamically loaded)
+//  LibLoadExceptq(&exRegRec);
+  thread->exitval = (apr_status_t) thread->func(thread, thread->data);
+  /* remove exception handler */
+  apr_thread_exit(thread, thread->exitval);      // In case caller does not call apr_thread_exit
 }
 
 
@@ -131,7 +139,29 @@ APR_DECLARE(apr_os_thread_t) apr_os_thread_current()
 
 APR_DECLARE(apr_status_t) apr_thread_exit(apr_thread_t *thd, apr_status_t retval)
 {
+    PTIB ptib;
+    PPIB ppib;
+//    EXCEPTIONREGISTRATIONRECORD *pexRegRec;     // 2013-03-17 SHL
     thd->exitval = retval;
+    // 2013-03-17 SHL
+    DosGetInfoBlocks(&ptib, &ppib);
+#if 0
+    pexRegRec = ptib->tib_pexchain;
+    /* Verify that we have what looks like a valid registration record pointer
+       It's a really bad coding error for this not to be the case
+       but some code within the thread might goof might install a
+       handler and forget to uninstall it
+       FIXME to report this condition somewhere
+       Maybe we should just force a trap
+    */
+    if (pexRegRec != END_OF_CHAIN &&
+        (PVOID)pexRegRec > (PVOID)&ptib &&
+        (PVOID)pexRegRec < ptib->tib_pstacklimit)
+    {
+      /* remove exception handler */
+      UninstallExceptq(pexRegRec);      // 2013-03-17 SHL
+    }
+#endif
     _endthread();
     return -1; /* If we get here something's wrong */
 }

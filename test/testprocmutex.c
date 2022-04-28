@@ -141,8 +141,10 @@ static void test_exclusive(abts_case *tc, const char *lockname,
     for (n = 0; n < CHILDREN; n++)
         make_child(tc, 0, &child[n], p);
 
+
     for (n = 0; n < CHILDREN; n++)
         await_child(tc, child[n]);
+
     
     ABTS_ASSERT(tc, "Locks don't appear to work", *x == MAX_COUNTER);
 

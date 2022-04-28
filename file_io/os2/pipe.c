@@ -31,9 +31,11 @@ static apr_status_t file_pipe_create(apr_file_t **in, apr_file_t **out,
     ULONG rc, action;
     static int id = 0;
     char pipename[50];
+    ULONG    CurMaxFH      = 0;          /* Current count of handles         */
+    LONG     ReqCount      = 0;          /* Number to adjust file handles    */
 
     sprintf(pipename, "/pipe/%d.%d", getpid(), id++);
-    rc = DosCreateNPipe(pipename, filedes, NP_ACCESS_INBOUND, NP_NOWAIT|1, 4096, 4096, 0);
+    rc = DosCreateNPipe(pipename, filedes, NP_ACCESS_INBOUND, NP_NOWAIT|0x01, 4096, 4096, 0);
 
     if (rc)
         return APR_FROM_OS_ERROR(rc);
@@ -49,13 +51,27 @@ static apr_status_t file_pipe_create(apr_file_t **in, apr_file_t **out,
                   OPEN_ACTION_OPEN_IF_EXISTS | OPEN_ACTION_FAIL_IF_NEW,
                   OPEN_ACCESS_WRITEONLY | OPEN_SHARE_DENYREADWRITE,
                   NULL);
+    if (rc == ERROR_TOO_MANY_OPEN_FILES) {
+	rc = DosSetRelMaxFH(&ReqCount,     /* Using 0 here will return the       */
+                      &CurMaxFH);    /* current number of file handles     */
+	ReqCount      = 10L;         /* Want 10 more file handles         */
+	rc = DosSetRelMaxFH(&ReqCount,&CurMaxFH);     /* Change handle maximum */
+
+	rc = DosOpen (pipename, filedes+1, &action, 0, FILE_NORMAL,
+                  OPEN_ACTION_OPEN_IF_EXISTS | OPEN_ACTION_FAIL_IF_NEW,
+                  OPEN_ACCESS_WRITEONLY | OPEN_SHARE_DENYREADWRITE,
+                  NULL);
+
+    }    
 
     if (rc) {
         DosClose(filedes[0]);
         return APR_FROM_OS_ERROR(rc);
     }
 
-    (*in) = (apr_file_t *)apr_palloc(pool_in, sizeof(apr_file_t));
+    // 2019-06-03 SHL Ensure apr_file_t initialized to zeros
+    // (*in) = (apr_file_t *)apr_palloc(pool_in, sizeof(apr_file_t));
+    (*in) = (apr_file_t *)apr_pcalloc(pool_in, sizeof(apr_file_t));
     rc = DosCreateEventSem(NULL, &(*in)->pipeSem, DC_SEM_SHARED, FALSE);
 
     if (rc) {
@@ -82,21 +98,23 @@ static apr_status_t file_pipe_create(apr_file_t **in, apr_file_t **out,
     (*in)->fname = apr_pstrdup(pool_in, pipename);
     (*in)->isopen = TRUE;
     (*in)->buffered = FALSE;
-    (*in)->flags = 0;
     (*in)->pipe = 1;
     (*in)->timeout = -1;
+    (*in)->ungetchar = -1;
     (*in)->blocking = BLK_ON;
     apr_pool_cleanup_register(pool_in, *in, apr_file_cleanup,
             apr_pool_cleanup_null);
 
-    (*out) = (apr_file_t *)apr_palloc(pool_out, sizeof(apr_file_t));
+    // 2019-06-03 SHL Ensure apr_file_t initialized to zeros
+    // (*out) = (apr_file_t *)apr_palloc(pool_out, sizeof(apr_file_t));
+    (*out) = (apr_file_t *)apr_pcalloc(pool_out, sizeof(apr_file_t));
     (*out)->pool = pool_out;
     (*out)->filedes = filedes[1];
     (*out)->fname = apr_pstrdup(pool_out, pipename);
     (*out)->isopen = TRUE;
     (*out)->buffered = FALSE;
-    (*out)->flags = 0;
-    (*out)->pipe = 1;
+    (*out)->pipe = 2;			// 2014-11-17 SHL mark as client pipe
+    (*out)->ungetchar = -1;
     (*out)->timeout = -1;
     (*out)->blocking = BLK_ON;
     apr_pool_cleanup_register(pool_out, *out, apr_file_cleanup,
@@ -173,23 +191,24 @@ APR_DECLARE(apr_status_t) apr_file_namedpipe_create(const char *filename, apr_fi
 
 APR_DECLARE(apr_status_t) apr_file_pipe_timeout_set(apr_file_t *thepipe, apr_interval_time_t timeout)
 {
+    int rc = 0;
+
     if (thepipe->pipe == 1) {
         thepipe->timeout = timeout;
 
-        if (thepipe->timeout >= 0) {
-            if (thepipe->blocking != BLK_OFF) {
+        if ((thepipe->timeout >= 0) && (thepipe->blocking != BLK_OFF) ) {
                 thepipe->blocking = BLK_OFF;
-                return APR_FROM_OS_ERROR(DosSetNPHState(thepipe->filedes, NP_NOWAIT));
-            }
+            rc = DosSetNPHState(thepipe->filedes, NP_NOWAIT);
         }
-        else if (thepipe->timeout == -1) {
-            if (thepipe->blocking != BLK_ON) {
+        else if ( (thepipe->timeout == -1) && (thepipe->blocking != BLK_ON) ) {
                 thepipe->blocking = BLK_ON;
-                return APR_FROM_OS_ERROR(DosSetNPHState(thepipe->filedes, NP_WAIT));
-            }
-        }
+            rc = DosSetNPHState(thepipe->filedes, NP_WAIT);
     }
-    return APR_EINVAL;
+
+        return APR_FROM_OS_ERROR(rc);
+
+    } else return APR_EINVAL;
+
 }
 
 
@@ -216,6 +235,7 @@ APR_DECLARE(apr_status_t) apr_os_pipe_put_ex(apr_file_t **file,
     (*file)->pipe = 1;
     (*file)->blocking = BLK_UNKNOWN; /* app needs to make a timeout call */
     (*file)->timeout = -1;
+    (*file)->ungetchar = -1;
     (*file)->filedes = *thefile;
 
     if (register_cleanup) {

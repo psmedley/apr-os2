@@ -279,8 +279,9 @@ APR_DECLARE(apr_status_t) apr_pollset_poll(apr_pollset_t *pollset,
  * @remark If the pollset was not created with APR_POLLSET_WAKEABLE the
  *         return value is APR_EINIT.
  */
+#ifndef __OS2__
 APR_DECLARE(apr_status_t) apr_pollset_wakeup(apr_pollset_t *pollset);
-
+#endif
 /**
  * Poll the descriptors in the poll structure
  * @param aprset The poll structure we will be using. 
@@ -305,14 +306,17 @@ APR_DECLARE(apr_status_t) apr_poll(apr_pollfd_t *aprset, apr_int32_t numsock,
  * Return a printable representation of the pollset method.
  * @param pollset The pollset to use
  */
+#ifndef __OS2__
 APR_DECLARE(const char *) apr_pollset_method_name(apr_pollset_t *pollset);
+#endif
 
 /**
  * Return a printable representation of the default pollset method
  * (APR_POLLSET_DEFAULT).
  */
+#ifndef __OS2__
 APR_DECLARE(const char *) apr_poll_method_defname(void);
-
+#endif
 /** Opaque structure used for pollcb API */
 typedef struct apr_pollcb_t apr_pollcb_t;
 
@@ -352,12 +356,13 @@ APR_DECLARE(apr_status_t) apr_pollcb_create(apr_pollcb_t **pollcb,
  * @remark Pollcb is only supported on some platforms; the apr_pollcb_create_ex()
  *         call will fail with APR_ENOTIMPL on platforms where it is not supported.
  */
+#ifndef __OS2__
 APR_DECLARE(apr_status_t) apr_pollcb_create_ex(apr_pollcb_t **pollcb,
                                                apr_uint32_t size,
                                                apr_pool_t *p,
                                                apr_uint32_t flags,
                                                apr_pollset_method_e method);
-
+#endif
 /**
  * Add a socket or file descriptor to a pollcb
  * @param pollcb The pollcb to which to add the descriptor

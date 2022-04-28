@@ -853,7 +853,7 @@ APR_DECLARE(char *) apr_strerror(apr_status_t statcode, char *buf,
 
 #define APR_FROM_OS_ERROR(e) (e == 0 ? APR_SUCCESS : e + APR_OS_START_SYSERR)
 #define APR_TO_OS_ERROR(e)   (e == 0 ? APR_SUCCESS : e - APR_OS_START_SYSERR)
-
+#define apr_get_os_error()    (errno)
 #define INCL_DOSERRORS
 #define INCL_DOS
 
@@ -934,7 +934,7 @@ APR_DECLARE(char *) apr_strerror(apr_status_t statcode, char *buf,
                 || (s) == APR_OS_START_SYSERR + ERROR_ACCESS_DENIED)
 #define APR_STATUS_IS_ENAMETOOLONG(s)   ((s) == APR_ENAMETOOLONG \
                 || (s) == APR_OS_START_SYSERR + ERROR_FILENAME_EXCED_RANGE \
-                || (s) == APR_OS_START_SYSERR + SOCENAMETOOLONG)
+                || (s) == APR_OS_START_SYSERR + SOCENAMETOOLONG  || (s) == SOCENAMETOOLONG)
 #define APR_STATUS_IS_ENOENT(s)         ((s) == APR_ENOENT \
                 || (s) == APR_OS_START_SYSERR + ERROR_FILE_NOT_FOUND \
                 || (s) == APR_OS_START_SYSERR + ERROR_PATH_NOT_FOUND \
@@ -954,9 +954,12 @@ APR_DECLARE(char *) apr_strerror(apr_status_t statcode, char *buf,
                 || (s) == APR_OS_START_SYSERR + ERROR_INVALID_FUNCTION)
 #define APR_STATUS_IS_ESPIPE(s)         ((s) == APR_ESPIPE \
                 || (s) == APR_OS_START_SYSERR + ERROR_NEGATIVE_SEEK)
+/* 2015-02-06 SHL SHL Add more */
 #define APR_STATUS_IS_EAGAIN(s)         ((s) == APR_EAGAIN \
                 || (s) == APR_OS_START_SYSERR + ERROR_NO_DATA \
                 || (s) == APR_OS_START_SYSERR + SOCEWOULDBLOCK \
+                || (s) == APR_OS_START_SYSERR + ENOBUFS \
+                || (s) == APR_OS_START_SYSERR + SOCENOBUFS \
                 || (s) == APR_OS_START_SYSERR + ERROR_LOCK_VIOLATION)
 #define APR_STATUS_IS_EINTR(s)          ((s) == APR_EINTR \
                 || (s) == APR_OS_START_SYSERR + SOCEINTR)

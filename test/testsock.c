@@ -66,6 +66,7 @@ static int wait_child(abts_case *tc, apr_proc_t *proc)
 
     ABTS_ASSERT(tc, "Error waiting for child process",
             apr_proc_wait(proc, &exitcode, &why, APR_WAIT) == APR_CHILD_DONE);
+	int rc = apr_proc_wait(proc, &exitcode, &why, APR_WAIT);
 
     ABTS_ASSERT(tc, "child terminated normally", why == APR_PROC_EXIT);
     return exitcode;

@@ -26,6 +26,5 @@ struct apr_proc_mutex_t {
     TID owner;
     int lock_count;
 };
-
 #endif  /* PROC_MUTEX_H */
 

@@ -20,6 +20,7 @@
 #include "apr_strings.h"
 #include "apr_portable.h"
 #include <string.h>
+#include <io.h>
 
 static apr_status_t dir_cleanup(void *thedir)
 {
@@ -46,6 +47,14 @@ APR_DECLARE(apr_status_t) apr_dir_open(apr_dir_t **new, const char *dirname, apr
     thedir->validentry = FALSE;
     *new = thedir;
     apr_pool_cleanup_register(pool, thedir, dir_cleanup, apr_pool_cleanup_null);
+    /* In testdir, a call to a non-existent directory and the expected return is
+     * APR_ENOENT. I am adding a quick access( ), which is supported by new gcc and
+     * Open Watcom. If the dir doesn' exist we bug-out with the correct error.
+     */
+#if ( defined(__INNOTEK_LIBC__) || defined(__WATCOMC__) )
+    if(access(dirname, F_OK) != 0) return APR_ENOENT;
+#endif
+
     return APR_SUCCESS;
 }
 
@@ -79,6 +88,9 @@ APR_DECLARE(apr_status_t) apr_dir_read(apr_finfo_t *finfo, apr_int32_t wanted,
         rv = DosFindFirst(apr_pstrcat(thedir->pool, thedir->dirname, "/*", NULL), &thedir->handle, 
                           FILE_ARCHIVED|FILE_DIRECTORY|FILE_SYSTEM|FILE_HIDDEN|FILE_READONLY, 
                           &thedir->entry, sizeof(thedir->entry), &entries, FIL_STANDARD);
+        // 2019-03-13 SHL for #685
+        if (rv)
+            thedir->handle = 0;
     } else {
         rv = DosFindNext(thedir->handle, &thedir->entry, sizeof(thedir->entry), &entries);
     }

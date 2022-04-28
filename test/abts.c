@@ -17,6 +17,8 @@
 #include "abts.h"
 #include "abts_tests.h"
 #include "testutil.h"
+#define INCL_LOADEXCEPTQ
+#include "exceptq.h"
 
 #define ABTS_STAT_SIZE 6
 static char status[ABTS_STAT_SIZE] = {'|', '/', '-', '|', '\\', '-'};
@@ -382,11 +384,13 @@ void abts_not_impl(abts_case *tc, const char *message, int lineno)
 }
 
 int main(int argc, const char *const argv[]) {
+    EXCEPTIONREGISTRATIONRECORD exRegRec;
     int i;
     int rv;
     int list_provided = 0;
     abts_suite *suite = NULL;
    
+    LoadExceptq(&exRegRec, "I", "testall");
     initialize();
 
     quiet = !isatty(STDOUT_FILENO);
@@ -430,6 +434,7 @@ int main(int argc, const char *const argv[]) {
     }
 
     rv = report(suite);
+    UninstallExceptq(&exRegRec);
     return rv;
 }
        

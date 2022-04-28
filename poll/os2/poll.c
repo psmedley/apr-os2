@@ -17,6 +17,7 @@
 #include "apr.h"
 #include "apr_poll.h"
 #include "apr_arch_networkio.h"
+#include <stdlib.h>
 
 APR_DECLARE(apr_status_t) apr_poll(apr_pollfd_t *aprset, apr_int32_t num,
                       apr_int32_t *nsds, apr_interval_time_t timeout)
@@ -102,4 +103,52 @@ APR_DECLARE(apr_status_t) apr_poll(apr_pollfd_t *aprset, apr_int32_t num,
     }
 
     return APR_SUCCESS;
+}
+
+APR_DECLARE(apr_status_t) apr_pollcb_create_ex(apr_pollcb_t **ret_pollcb,
+                                               apr_uint32_t size,
+                                               apr_pool_t *p,
+                                               apr_uint32_t flags,
+                                               apr_pollset_method_e method)
+{
+    return APR_ENOTIMPL;
+}
+
+APR_DECLARE(apr_status_t) apr_pollcb_create(apr_pollcb_t **pollcb,
+                                            apr_uint32_t size,
+                                            apr_pool_t *p,
+                                            apr_uint32_t flags)
+{
+    return APR_ENOTIMPL;
+}
+
+APR_DECLARE(apr_status_t) apr_pollcb_add(apr_pollcb_t *pollcb,
+                                         apr_pollfd_t *descriptor)
+{
+    return APR_ENOTIMPL;
+}
+
+APR_DECLARE(apr_status_t) apr_pollcb_remove(apr_pollcb_t *pollcb,
+                                            apr_pollfd_t *descriptor)
+{
+    return APR_ENOTIMPL;
+}
+
+
+APR_DECLARE(apr_status_t) apr_pollcb_poll(apr_pollcb_t *pollcb,
+                                          apr_interval_time_t timeout,
+                                          apr_pollcb_cb_t func,
+                                          void *baton)
+{
+    return APR_ENOTIMPL;
+}
+
+APR_DECLARE(apr_status_t) apr_pollcb_wakeup(apr_pollcb_t *pollcb)
+{
+    return APR_ENOTIMPL;
+}
+
+APR_DECLARE(const char *) apr_pollcb_method_name(apr_pollcb_t *pollcb)
+{
+    return NULL;
 }

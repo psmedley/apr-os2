@@ -43,6 +43,10 @@
 
 /* --------------------------------------------------------------------- */
 
+#ifdef __KLIBC__
+#define _NERROR_H_
+#endif
+
 #ifdef APR_WANT_STRFUNC
 
 #if APR_HAVE_STRING_H

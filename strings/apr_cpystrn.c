@@ -200,7 +200,7 @@ APR_DECLARE(const char *) apr_filepath_name_get(const char *pathname)
     const char path_separator = '/';
     const char *s = strrchr(pathname, path_separator);
 
-#ifdef WIN32
+#if defined(WIN32) || defined(__OS2__) /* 2020-10-04 */
     const char path_separator_win = '\\';
     const char drive_separator_win = ':';
     const char *s2 = strrchr(pathname, path_separator_win);

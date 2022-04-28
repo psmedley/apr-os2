@@ -652,9 +652,10 @@ abts_suite *testcond(abts_suite *suite)
 #endif
     suite = ADD_SUITE(suite)
 
-#if !APR_HAS_THREADS
+#if !APR_HAS_THREADS 
     abts_run_test(suite, threads_not_impl, NULL);
 #else
+#ifndef __OS2__
     abts_run_test(suite, lost_signal, NULL);
     abts_run_test(suite, dynamic_binding, NULL);
     abts_run_test(suite, broadcast_threads, NULL);
@@ -664,6 +665,7 @@ abts_suite *testcond(abts_suite *suite)
     abts_run_test(suite, nested_wait, &fnptr);
     abts_run_test(suite, pipe_producer_consumer, NULL);
     abts_run_test(suite, ping_pong, NULL);
+#endif
 #endif
 
     return suite;

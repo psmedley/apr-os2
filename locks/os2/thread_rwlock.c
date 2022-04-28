@@ -118,6 +118,7 @@ APR_DECLARE(apr_status_t) apr_thread_rwlock_wrlock(apr_thread_rwlock_t *rwlock)
 
         if (rc)
             DosReleaseMutexSem(rwlock->write_lock);
+
     }
 
     return APR_FROM_OS_ERROR(rc);

@@ -7,11 +7,17 @@
 #include <io.h>
 #endif
 #include <stdlib.h>
+#ifdef __INNOTEK_LIBC__
+#include <fcntl.h>
+#endif
 
 int main(void)
 {
     char buf[256];
     int bytes;
+#if defined(__WATCOMC__)||defined(__INNOTEK_LIBC__)
+    setmode(STDIN_FILENO, O_BINARY);
+#endif
     
     bytes = (int)read(STDIN_FILENO, buf, 256);
     if (bytes > 0)

@@ -195,6 +195,10 @@
 #ifdef OS2
 #define INCL_DOS
 #define INCL_DOSERRORS
+#define INCL_EXAPIS
+#ifdef __KLIBC__
+#include <os2safe.h>
+#endif
 #include <os2.h>
 #endif
 

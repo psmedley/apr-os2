@@ -17,12 +17,14 @@
 #ifndef APR_ARCH_POLL_PRIVATE_H
 #define APR_ARCH_POLL_PRIVATE_H
 
+#ifndef __KLIBC__
 #if HAVE_POLL_H
 #include <poll.h>
 #endif
 
 #if HAVE_SYS_POLL_H
 #include <sys/poll.h>
+#endif
 #endif
 
 #ifdef HAVE_PORT_CREATE

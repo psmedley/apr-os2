@@ -18,8 +18,8 @@
 #include "apr_arch_file_io.h"
 #include "apr_file_io.h"
 #include <errno.h>
-#include <string.h>
 #include "apr_errno.h"
+#include <string.h>
 
 static int errormap[][2] = {
     { NO_ERROR,                   APR_SUCCESS      },
@@ -37,7 +37,7 @@ static int errormap[][2] = {
     { ERROR_NEGATIVE_SEEK,        APR_ESPIPE       },
     { ERROR_NO_SIGNAL_SENT,       ESRCH            },
     { ERROR_NO_DATA,              APR_EAGAIN       },
-    { SOCEINTR,                 EINTR           },
+    { SOCEINTR,         	EINTR           },
     { SOCEWOULDBLOCK,           EWOULDBLOCK     },
     { SOCEINPROGRESS,           EINPROGRESS     },
     { SOCEALREADY,              EALREADY        },
@@ -70,7 +70,8 @@ static int errormap[][2] = {
     { SOCEHOSTDOWN,             EHOSTDOWN       },
     { SOCEHOSTUNREACH,          EHOSTUNREACH    },
     { SOCENOTEMPTY,             ENOTEMPTY       },
-    { SOCEPIPE,                 EPIPE           }
+    { SOCEPIPE,                 EPIPE           },
+    { SOCEFAULT,		EFAULT		}
 };
 
 #define MAPSIZE (sizeof(errormap)/sizeof(errormap[0]))
@@ -81,15 +82,13 @@ int apr_canonical_error(apr_status_t err)
 
     if (err < APR_OS_START_SYSERR)
         return err;
-
     err -= APR_OS_START_SYSERR;
-
     for (index=0; index<MAPSIZE && errormap[index][0] != err; index++);
     
     if (index<MAPSIZE)
         rv = errormap[index][1];
     else
-        fprintf(stderr, "apr_canonical_error: Unknown OS/2 error code %d\n", err );
+        fprintf(stderr, "apr_canonical_error: Unknown OS/2 error code %d\n", err);
         
     return rv;
 }

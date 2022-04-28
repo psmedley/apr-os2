@@ -36,7 +36,7 @@ enum output_type_t { otGeneral, otObject, otProgram, otStaticLibrary, otDynamicL
 #  define CC         "gcc"
 #  define GEN_EXPORTS "emxexp"
 #  define DEF2IMPLIB_CMD "emximp"
-#  define SHARE_SW   "-Zdll -Zmtd"
+#  define SHARE_SW   "-Zdll -Zmap -Zhigh-mem"
 #  define USE_OMF true
 #  define TRUNCATE_DLL_NAME
 #  define DYNAMIC_LIB_EXT "dll"
@@ -45,7 +45,7 @@ enum output_type_t { otGeneral, otObject, otProgram, otStaticLibrary, otDynamicL
 #  if USE_OMF
      /* OMF is the native format under OS/2 */
 #    define STATIC_LIB_EXT "lib"
-#    define OBJECT_EXT     "obj"
+#    define OBJECT_EXT     "o"
 #    define LIBRARIAN      "emxomfar"
 #  else
      /* but the alternative, a.out, can fork() which is sometimes necessary */
@@ -262,7 +262,7 @@ bool parse_input_file_name(char *arg, cmd_data_t *cmd_data)
     if (strcmp(ext, "la") == 0) {
         newarg = (char *)malloc(strlen(arg) + 10);
         strcpy(newarg, arg);
-        newarg[pathlen] = 0;
+        newarg[name - arg] = 0;
         strcat(newarg, ".libs/");
 
         if (strncmp(name, "lib", 3) == 0) {
@@ -743,7 +743,7 @@ char *truncate_dll_name(char *path)
     }
 
     if (len > 8) {
-        strcpy(newname + 8, strchr(newname, '.'));
+        strcpy(newname + 5, strchr(newname, '.')-3);
     }
 
     return tmppath;

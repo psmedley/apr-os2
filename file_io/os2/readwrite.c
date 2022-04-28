@@ -23,21 +23,38 @@
 #include "apr_strings.h"
 
 #include <malloc.h>
+#include <umalloc.h>
+#include <stdlib.h>
+#include <unistd.h>
 
-APR_DECLARE(apr_status_t) apr_file_read(apr_file_t *thefile, void *buf, apr_size_t *nbytes)
+APR_DECLARE(apr_status_t) apr_file_read(apr_file_t *thefile, void *buf, apr_size_t *len)
 {
     ULONG rc = 0;
-    ULONG bytesread;
+    ULONG bytes_read = 0;
 
-    if (!thefile->isopen) {
-        *nbytes = 0;
-        return APR_EBADF;
+    if (*len <= 0) {
+        *len = 0;
+        return APR_SUCCESS;
     }
-
+#if 1
+    /* Handle the ungetchar if there is one */
+    /* copied from win32/readwrite.c */
+    if (thefile->ungetchar != -1) {
+        bytes_read = 1;
+        *(char *)buf = (char)thefile->ungetchar;
+        buf = (char *)buf + 1;
+        (*len)--;
+        thefile->ungetchar = -1;
+        if (*len == 0) {
+            *len = bytes_read;
+            return APR_SUCCESS;
+        }
+    }
+#endif
     if (thefile->buffered) {
         char *pos = (char *)buf;
         ULONG blocksize;
-        ULONG size = *nbytes;
+        ULONG size = *len;
 
         apr_thread_mutex_lock(thefile->mutex);
 
@@ -56,19 +73,19 @@ APR_DECLARE(apr_status_t) apr_file_read(apr_file_t *thefile, void *buf, apr_size
 
         while (rc == 0 && size > 0) {
             if (thefile->bufpos >= thefile->dataRead) {
-                ULONG bytesread;
+                ULONG bytes_read;
                 rc = DosRead(thefile->filedes, thefile->buffer,
-                             thefile->bufsize, &bytesread);
-
-                if (bytesread == 0) {
+                             thefile->bufsize, &bytes_read);
+                if (bytes_read == 0) {
                     if (rc == 0)
                         thefile->eof_hit = TRUE;
                     break;
                 }
-
-                thefile->dataRead = bytesread;
+		else {
+	                thefile->dataRead = bytes_read;
                 thefile->filePtr += thefile->dataRead;
                 thefile->bufpos = 0;
+            }
             }
 
             blocksize = size > thefile->dataRead - thefile->bufpos ? thefile->dataRead - thefile->bufpos : size;
@@ -78,40 +95,51 @@ APR_DECLARE(apr_status_t) apr_file_read(apr_file_t *thefile, void *buf, apr_size
             size -= blocksize;
         }
 
-        *nbytes = rc == 0 ? pos - (char *)buf : 0;
+        *len = rc == 0 ? pos - (char *)buf : 0;
         apr_thread_mutex_unlock(thefile->mutex);
 
-        if (*nbytes == 0 && rc == 0 && thefile->eof_hit) {
+        if (*len == 0 && rc == 0 && thefile->eof_hit) {
+            thefile->eof_hit = TRUE;
             return APR_EOF;
         }
 
         return APR_FROM_OS_ERROR(rc);
     } else {
+        /* Unbuffered i/o */
+        unsigned long nbytes;
+
+        // 2014-11-11 SHL reworked to support ERROR_MORE_DATA etc.
+	for (;;) {
+	    unsigned long post_count;
         if (thefile->pipe)
-            DosResetEventSem(thefile->pipeSem, &rc);
-
-        rc = DosRead(thefile->filedes, buf, *nbytes, &bytesread);
-
-        if (rc == ERROR_NO_DATA && thefile->timeout != 0) {
-            int rcwait = DosWaitEventSem(thefile->pipeSem, thefile->timeout >= 0 ? thefile->timeout / 1000 : SEM_INDEFINITE_WAIT);
-
-            if (rcwait == 0) {
-                rc = DosRead(thefile->filedes, buf, *nbytes, &bytesread);
+		DosResetEventSem(thefile->pipeSem, &post_count);
+	    rc = DosRead(thefile->filedes, buf, *len, &nbytes);
+	    if (!thefile->pipe)
+		break;			// Blocking i/o - we are done
+	    if (rc == ERROR_MORE_DATA) {
+		// Buffer is full - caller will read more eventually
+		rc = NO_ERROR;
+		break;
             }
-            else if (rcwait == ERROR_TIMEOUT) {
-                *nbytes = 0;
+	    if (thefile->timeout == 0)
+		break;
+	    if (rc != ERROR_NO_DATA)
+		break;
+	    rc = DosWaitEventSem(thefile->pipeSem, thefile->timeout >= 0 ? thefile->timeout / 1000 : SEM_INDEFINITE_WAIT);
+	    if (rc == ERROR_TIMEOUT) {
+		*len = 0;
                 return APR_TIMEUP;
             }
-        }
+	} // for
 
         if (rc) {
-            *nbytes = 0;
+	    *len = 0;
             return APR_FROM_OS_ERROR(rc);
         }
 
-        *nbytes = bytesread;
+	*len = nbytes;
         
-        if (bytesread == 0) {
+	if (nbytes == 0) {
             thefile->eof_hit = TRUE;
             return APR_EOF;
         }
@@ -136,24 +164,25 @@ APR_DECLARE(apr_status_t) apr_file_write(apr_file_t *thefile, const void *buf, a
         char *pos = (char *)buf;
         int blocksize;
         int size = *nbytes;
-
-        apr_thread_mutex_lock(thefile->mutex);
+ 
+       apr_thread_mutex_lock(thefile->mutex);
 
         if ( thefile->direction == 0 ) {
             /* Position file pointer for writing at the offset we are logically reading from */
             ULONG offset = thefile->filePtr - thefile->dataRead + thefile->bufpos;
             if (offset != thefile->filePtr)
-                DosSetFilePtr(thefile->filedes, offset, FILE_BEGIN, &thefile->filePtr );
+                DosSetFilePtr(thefile->filedes, offset, FILE_BEGIN, (unsigned long *) &thefile->filePtr );
             thefile->bufpos = thefile->dataRead = 0;
             thefile->direction = 1;
         }
 
         while (rc == 0 && size > 0) {
-            if (thefile->bufpos == thefile->bufsize) /* write buffer is full */
+	    if (thefile->bufpos == thefile->bufsize){ /* write buffer is full */
                 /* XXX bug; - rc is double-transformed os->apr below */
                 rc = apr_file_flush(thefile);
-
-            blocksize = size > thefile->bufsize - thefile->bufpos ? thefile->bufsize - thefile->bufpos : size;
+		}
+	    blocksize = size > thefile->bufsize - thefile->bufpos ? 
+	                       thefile->bufsize - thefile->bufpos : size;
             memcpy(thefile->buffer + thefile->bufpos, pos, blocksize);
             thefile->bufpos += blocksize;
             pos += blocksize;
@@ -163,23 +192,53 @@ APR_DECLARE(apr_status_t) apr_file_write(apr_file_t *thefile, const void *buf, a
         apr_thread_mutex_unlock(thefile->mutex);
         return APR_FROM_OS_ERROR(rc);
     } else {
+        void *pvBuf_safe = NULL;
+
+        /*
+         * Devices doesn't like getting high addresses.
+         */
+        if (isatty(thefile->filedes)
+            &&  (unsigned)buf >= 512*1024*1024)
+        {
+            if (*nbytes > 256)
+            {   /* use heap for large buffers */
+                pvBuf_safe = _tmalloc(*nbytes);
+                if (!pvBuf_safe)
+                {
+                    errno = ENOMEM;
+	            return APR_FROM_OS_ERROR(errno);
+                }
+                memcpy(pvBuf_safe, buf, *nbytes);
+                buf = pvBuf_safe;
+            }
+            else
+            {   /* use stack for small buffers */
+                pvBuf_safe = alloca(*nbytes);
+                memcpy(pvBuf_safe, buf, *nbytes);
+                buf = pvBuf_safe;
+                pvBuf_safe = NULL;
+            }
+        }
+
         if (thefile->flags & APR_FOPEN_APPEND) {
             FILELOCK all = { 0, 0x7fffffff };
             ULONG newpos;
-            rc = DosSetFileLocks(thefile->filedes, NULL, &all, -1, 0);
 
+            rc = DosSetFileLocks(thefile->filedes, NULL, &all, -1, 0);
+ 
             if (rc == 0) {
                 rc = DosSetFilePtr(thefile->filedes, 0, FILE_END, &newpos);
-
                 if (rc == 0) {
-                    rc = DosWrite(thefile->filedes, buf, *nbytes, &byteswritten);
+	            rc = DosWrite(thefile->filedes, (PVOID)buf, *nbytes, &byteswritten);
                 }
-
                 DosSetFileLocks(thefile->filedes, &all, NULL, -1, 0);
             }
         } else {
             rc = DosWrite(thefile->filedes, buf, *nbytes, &byteswritten);
         }
+
+        if (pvBuf_safe)
+            free(pvBuf_safe);
 
         if (rc) {
             *nbytes = 0;
@@ -193,92 +252,82 @@ APR_DECLARE(apr_status_t) apr_file_write(apr_file_t *thefile, const void *buf, a
 
 
 
-#ifdef HAVE_WRITEV
-
 APR_DECLARE(apr_status_t) apr_file_writev(apr_file_t *thefile, const struct iovec *vec, apr_size_t nvec, apr_size_t *nbytes)
 {
-    int bytes;
+    apr_status_t rv = APR_SUCCESS;
+    apr_size_t i;
+    apr_size_t bwrote = 0;
+    char *buf;
 
-    if (thefile->buffered) {
-        apr_status_t rv = apr_file_flush(thefile);
+    *nbytes = 0;
+    for (i = 0; i < nvec; i++) {
+	buf = vec[i].iov_base;
+	bwrote = vec[i].iov_len;
+	rv = apr_file_write(thefile, buf, &bwrote);
+	*nbytes += bwrote;
         if (rv != APR_SUCCESS) {
-            return rv;
+	    break;
         }
     }
-
-    if ((bytes = writev(thefile->filedes, vec, nvec)) < 0) {
-        *nbytes = 0;
-        return errno;
+    return rv;
     }
-    else {
-        *nbytes = bytes;
-        return APR_SUCCESS;
-    }
-}
-#endif
 
 
 
 APR_DECLARE(apr_status_t) apr_file_putc(char ch, apr_file_t *thefile)
 {
-    ULONG rc;
-    ULONG byteswritten;
+    apr_size_t nbytes = 1;
 
-    if (!thefile->isopen) {
-        return APR_EBADF;
+    return apr_file_write(thefile, &ch, &nbytes);
     }
 
-    rc = DosWrite(thefile->filedes, &ch, 1, &byteswritten);
 
-    if (rc) {
-        return APR_FROM_OS_ERROR(rc);
-    }
     
-    return APR_SUCCESS;
-}
-
-
-
 APR_DECLARE(apr_status_t) apr_file_ungetc(char ch, apr_file_t *thefile)
 {
-    apr_off_t offset = -1;
-    return apr_file_seek(thefile, APR_CUR, &offset);
+    thefile->ungetchar = (unsigned char)ch;
+    return APR_SUCCESS; 
 }
 
 
 APR_DECLARE(apr_status_t) apr_file_getc(char *ch, apr_file_t *thefile)
 {
-    ULONG rc;
-    apr_size_t bytesread;
+    apr_size_t nbytes = 1;
 
-    if (!thefile->isopen) {
-        return APR_EBADF;
+    return apr_file_read(thefile, ch, &nbytes);
+
     }
 
-    bytesread = 1;
-    rc = apr_file_read(thefile, ch, &bytesread);
 
-    if (rc) {
-        return rc;
-    }
     
-    if (bytesread == 0) {
-        thefile->eof_hit = TRUE;
-        return APR_EOF;
-    }
-    
-    return APR_SUCCESS;
-}
-
-
-
 APR_DECLARE(apr_status_t) apr_file_puts(const char *str, apr_file_t *thefile)
 {
-    apr_size_t len;
+    return apr_file_write_full(thefile, str, strlen(str), NULL);
+    }
+    
 
-    len = strlen(str);
-    return apr_file_write(thefile, str, &len); 
+
+apr_status_t apr_file_flush_locked(apr_file_t *thefile)
+{
+    apr_status_t rv = APR_SUCCESS;
+
+    if (thefile->direction == 1 && thefile->bufpos) {
+	apr_ssize_t written;
+
+	do {
+	    written = write(thefile->filedes, thefile->buffer, thefile->bufpos);
+	} while (written == -1 && errno == EINTR);
+	if (written == -1) {
+	    rv = errno;
+	} else {
+	    thefile->filePtr += written;
+	    thefile->bufpos = 0;
 }
+    }
+
+    return rv;
+}
+
 
 
 APR_DECLARE(apr_status_t) apr_file_flush(apr_file_t *thefile)
@@ -349,9 +398,60 @@ APR_DECLARE(apr_status_t) apr_file_gets(char *str, int len, apr_file_t *thefile)
 }
 
 
+/* Pull from unix code to start a sync up */
+#if (defined(__INNOTEK_LIBC__) || defined(__WATCOMC__) )
+
+struct apr_file_printf_data {
+    apr_vformatter_buff_t vbuff;
+    apr_file_t *fptr;
+    char *buf;
+};
+
+static int file_printf_flush(apr_vformatter_buff_t *buff)
+{
+    struct apr_file_printf_data *data = (struct apr_file_printf_data *)buff;
+
+    if (apr_file_write_full(data->fptr, data->buf,
+	                    data->vbuff.curpos - data->buf, NULL)) {
+	return -1;
+    }
+
+    data->vbuff.curpos = data->buf;
+    return 0;
+}
 
 APR_DECLARE_NONSTD(int) apr_file_printf(apr_file_t *fptr, 
                                         const char *format, ...)
+{
+    struct apr_file_printf_data data;
+    va_list ap;
+    int count;
+
+    /* don't really need a HUGE_STRING_LEN anymore */
+    data.buf = malloc(HUGE_STRING_LEN);
+    if (data.buf == NULL) {
+	return -1;
+    }
+    data.vbuff.curpos = data.buf;
+    data.vbuff.endpos = data.buf + HUGE_STRING_LEN;
+    data.fptr = fptr;
+    va_start(ap, format);
+    count = apr_vformatter(file_printf_flush,
+	                   (apr_vformatter_buff_t *)&data, format, ap);
+    /* apr_vformatter does not call flush for the last bits */
+    if (count >= 0) file_printf_flush((apr_vformatter_buff_t *)&data);
+
+    va_end(ap);
+
+    free(data.buf);
+
+    return count;
+}
+
+#else
+
+APR_DECLARE_NONSTD(int) apr_file_printf(apr_file_t *fptr, 
+	                                const char *format, ...)
 {
     int cc;
     va_list ap;
@@ -369,7 +469,7 @@ APR_DECLARE_NONSTD(int) apr_file_printf(apr_file_t *fptr,
     free(buf);
     return (cc == APR_SUCCESS) ? len : -1;
 }
-
+#endif
 
 
 apr_status_t apr_file_check_read(apr_file_t *fd)
@@ -381,8 +481,9 @@ apr_status_t apr_file_check_read(apr_file_t *fd)
 
     rc = DosWaitEventSem(fd->pipeSem, SEM_IMMEDIATE_RETURN);
 
-    if (rc == ERROR_TIMEOUT)
+    if (rc == ERROR_TIMEOUT) {
         return APR_TIMEUP;
+    }
 
     return APR_FROM_OS_ERROR(rc);
 }

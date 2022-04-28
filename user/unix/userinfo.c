@@ -77,7 +77,7 @@ APR_DECLARE(apr_status_t) apr_uid_homepath_get(char **dirname,
     if ((rv = getpwnam_safe(username, &pw, pwbuf)) != APR_SUCCESS)
         return rv;
 
-#ifdef OS2
+#if (defined(OS2)&&!defined(__INNOTEK_LIBC__))
     /* Need to manually add user name for OS/2 */
     *dirname = apr_pstrcat(p, pw.pw_dir, pw.pw_name, NULL);
 #else

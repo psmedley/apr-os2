@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#ifndef __KLIBC__ /* KLIBC has a random() function - use it */
 /* The high resolution timer API provides access to the hardware timer 
  * running at around 1.1MHz. The amount this changes in a time slice is
  * varies randomly due to system events, hardware interrupts etc
@@ -62,8 +63,10 @@ static UCHAR randbyte_sysinfo()
  * which is why it's run-time linked.
  */
 
+#ifndef __INNOTEK_LIBC__
 static APIRET APIENTRY(*DosPerfSysCall) (ULONG ulCommand, ULONG ulParm1,
                                          ULONG ulParm2, ULONG ulParm3) = NULL;
+#endif
 static HMODULE hDoscalls = 0;
 #define   CMD_KI_RDCNT    (0x63)
 
@@ -85,6 +88,7 @@ static UCHAR randbyte_perf()
     CPUUTIL util;
     int c;
 
+#ifndef __INNOTEK_LIBC__
     if (hDoscalls == 0) {
         char failed_module[20];
         ULONG rc;
@@ -111,13 +115,28 @@ static UCHAR randbyte_perf()
             DosPerfSysCall = NULL;
         }
     }
-
+#endif
     return byte;
 }
 
 
 
-static UCHAR randbyte()
+UCHAR randbyte()
 {
     return randbyte_hrtimer() ^ randbyte_sysinfo() ^ randbyte_perf();
 }
+#else /* __KLIBC__ */
+UCHAR randbyte()
+{
+    int c;
+    UCHAR byte;
+    ULONG ulrandom;
+    ulrandom = random();
+     
+    for (c = 0; c < sizeof(ulrandom); c++) {
+        byte ^= ((UCHAR *)&ulrandom)[c];
+    }
+
+    return byte;
+}
+#endif

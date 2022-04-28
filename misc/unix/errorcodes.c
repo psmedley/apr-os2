@@ -145,9 +145,8 @@ static char *apr_error_string(apr_status_t statcode)
 }
 
 
-#ifdef OS2
+#if defined(OS2) 
 #include <ctype.h>
-
 int apr_canonical_error(apr_status_t err);
 
 static char *apr_os_strerror(char* buf, apr_size_t bufsize, int err)

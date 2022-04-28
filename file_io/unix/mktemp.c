@@ -52,6 +52,9 @@
 #include "apr_arch_file_io.h" /* prototype of apr_mkstemp() */
 #include "apr_portable.h" /* for apr_os_file_put() */
 #include "apr_arch_inherit.h"
+#ifdef __OS2__
+#include <stdlib.h>
+#endif
 
 #ifndef HAVE_MKSTEMP
 
@@ -81,7 +84,9 @@
 #include <fcntl.h>
 #endif
 #include <stdio.h>
+#ifndef __INNOTEK_LIBC__
 #include <stdlib.h>
+#endif
 #include <string.h>
 #include <ctype.h>
 #ifdef HAVE_TIME_H
@@ -189,6 +194,11 @@ APR_DECLARE(apr_status_t) apr_file_mktemp(apr_file_t **fp, char *template, apr_i
 #else
     fd = mkstemp(template);
 #endif
+
+#ifdef __INNOTEK_LIBC__
+          setmode(fd, O_BINARY);
+#endif 
+
     
     if (fd == -1) {
         return errno;

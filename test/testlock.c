@@ -252,6 +252,7 @@ static void test_thread_rwlock(abts_case *tc, void *data)
     apr_thread_rwlock_destroy(rwlock);
 }
 
+
 static void test_cond(abts_case *tc, void *data)
 {
     apr_thread_t *p1, *p2, *p3, *p4, *c1;
@@ -400,8 +401,10 @@ abts_suite *testlock(abts_suite *suite)
     abts_run_test(suite, test_thread_timedmutex, NULL);
 #endif
     abts_run_test(suite, test_thread_rwlock, NULL);
+#ifndef OS2 /* apr_thread_cond_* not implements on os2 */
     abts_run_test(suite, test_cond, NULL);
     abts_run_test(suite, test_timeoutcond, NULL);
+#endif
 #if APR_HAS_TIMEDLOCKS
     abts_run_test(suite, test_timeoutmutex, NULL);
 #endif

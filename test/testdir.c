@@ -31,6 +31,7 @@ static void test_mkdir(abts_case *tc, void *data)
     apr_finfo_t finfo;
 
     rv = apr_dir_make("data/testdir", APR_UREAD | APR_UWRITE | APR_UEXECUTE, p);
+
     ABTS_INT_EQUAL(tc, APR_SUCCESS, rv);
 
     rv = apr_stat(&finfo, "data/testdir", APR_FINFO_TYPE, p);

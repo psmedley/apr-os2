@@ -38,7 +38,6 @@ static void set_keepalive(abts_case *tc, void *data)
 
     rv = apr_socket_opt_set(sock, APR_SO_KEEPALIVE, 1);
     ABTS_INT_EQUAL(tc, APR_SUCCESS, rv);
-
     rv = apr_socket_opt_get(sock, APR_SO_KEEPALIVE, &ck);
     ABTS_INT_EQUAL(tc, APR_SUCCESS, rv);
     ABTS_INT_EQUAL(tc, 1, ck);

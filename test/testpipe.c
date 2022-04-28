@@ -190,6 +190,7 @@ abts_suite *testpipe(abts_suite *suite)
 {
     suite = ADD_SUITE(suite)
 
+#if 1
     abts_run_test(suite, create_pipe, NULL);
     abts_run_test(suite, close_pipe, NULL);
     abts_run_test(suite, set_timeout, NULL);
@@ -197,9 +198,11 @@ abts_suite *testpipe(abts_suite *suite)
     abts_run_test(suite, read_write, NULL);
     abts_run_test(suite, close_pipe, NULL);
     abts_run_test(suite, read_write_notimeout, NULL);
+#endif
     abts_run_test(suite, test_pipe_writefull, NULL);
+#if 1
     abts_run_test(suite, close_pipe, NULL);
-
+#endif
     return suite;
 }
 

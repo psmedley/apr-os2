@@ -31,6 +31,8 @@
 #define ABS_ROOT "C:/"
 #elif defined(NETWARE)
 #define ABS_ROOT "SYS:/"
+#elif defined(__OS2__)
+#define ABS_ROOT "C:/"
 #else
 #define ABS_ROOT "/"
 #endif
@@ -92,6 +94,7 @@ static void merge_dotdot(abts_case *tc, void *data)
      * the case of the test directory:
      */
     rv = apr_filepath_merge(&dstpath, "", "../test", APR_FILEPATH_TRUENAME, p);
+
     ABTS_INT_EQUAL(tc, APR_SUCCESS, rv);
     ABTS_STR_EQUAL(tc, "../test", dstpath);
 }
@@ -146,7 +149,6 @@ static void merge_notrelfail(abts_case *tc, void *data)
     rv = apr_filepath_merge(&dstpath, "foo/bar", "../baz", 
                             APR_FILEPATH_NOTRELATIVE, p);
     apr_strerror(rv, errmsg, sizeof(errmsg));
-
     ABTS_PTR_EQUAL(tc, NULL, dstpath);
     ABTS_INT_EQUAL(tc, 1, APR_STATUS_IS_ERELATIVE(rv));
     ABTS_STR_EQUAL(tc, "The given path is relative", errmsg);
@@ -161,7 +163,6 @@ static void merge_notabsfail(abts_case *tc, void *data)
     rv = apr_filepath_merge(&dstpath, ABS_ROOT"foo/bar", "../baz", 
                             APR_FILEPATH_NOTABSOLUTE, p);
     apr_strerror(rv, errmsg, sizeof(errmsg));
-
     ABTS_PTR_EQUAL(tc, NULL, dstpath);
     ABTS_INT_EQUAL(tc, 1, APR_STATUS_IS_EABSOLUTE(rv));
     ABTS_STR_EQUAL(tc, "The given path is absolute", errmsg);

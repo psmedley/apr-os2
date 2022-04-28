@@ -406,13 +406,21 @@ APR_DECLARE(apr_status_t) apr_os_dir_put(apr_dir_t **dir,
  * to by sock will be reused and updated with the given socket.
  * @param sock The pool to use.
  * @param thesock The socket to convert to.
- * @param cont The socket we are converting to an apr type.
+ * @param cont The pool to use.
  * @remark If it is a true socket, it is best to call apr_os_sock_make()
  *         and provide APR with more information about the socket.
  */
 APR_DECLARE(apr_status_t) apr_os_sock_put(apr_socket_t **sock, 
                                           apr_os_sock_t *thesock, 
                                           apr_pool_t *cont);
+
+/**
+ * Deregister socket cleanup function for socket.
+ * Ensures sockets not owned by process are not closed during pool cleanup.
+ * Supports use case where httpd mpm passes listen sockets to child process.
+ * @param sock The socket to have cleanup deregistered.
+ */
+APR_DECLARE(void) apr_sock_cleanup_kill(apr_socket_t *sock);
 
 /**
  * Create a socket from an existing descriptor and local and remote

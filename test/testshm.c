@@ -126,7 +126,6 @@ static void test_anon(abts_case *tc, void *data)
 
     boxes = apr_shm_baseaddr_get(shm);
     ABTS_PTR_NOTNULL(tc, boxes);
-
     rv = apr_proc_fork(&proc, p);
     if (rv == APR_INCHILD) { /* child */
         int num = msgwait(5, 0, N_BOXES);

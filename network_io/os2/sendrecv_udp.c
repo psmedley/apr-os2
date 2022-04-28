@@ -94,6 +94,10 @@ APR_DECLARE(apr_status_t) apr_socket_recvfrom(apr_sockaddr_t *from,
         (*len) = 0;
         return APR_FROM_OS_ERROR(serrno);
     }
+#ifdef __KLIBC__
+    apr_sockaddr_vars_set(from, from->sa.sin.sin_family, 
+                          ntohs(from->sa.sin.sin_port));
+#endif
 
     (*len) = rv;
 

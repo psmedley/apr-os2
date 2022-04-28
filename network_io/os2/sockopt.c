@@ -24,9 +24,11 @@
 #include <sys/socket.h>
 #include <netinet/tcp.h>
 #include <netinet/in.h>
+#ifndef __INNOTEK_LIBC__
 #include <unistd.h>
+#endif
 #include <netdb.h>
-#include <sys/so_ioctl.h>
+#include <sys/ioctl.h>
 
 
 APR_DECLARE(apr_status_t) apr_socket_timeout_set(apr_socket_t *sock, 
@@ -107,10 +109,51 @@ APR_DECLARE(apr_status_t) apr_socket_timeout_get(apr_socket_t *sock,
 APR_DECLARE(apr_status_t) apr_socket_opt_get(apr_socket_t *sock, 
                                              apr_int32_t opt, apr_int32_t *on)
 {
-    switch(opt) {
-    default:
-        return APR_EINVAL;
+    int optval = 0;
+    int optlen = sizeof(optval);
+
+    struct linger  li;
+//    struct timeval ti;
+
+    if (opt & APR_SO_DEBUG) {
+        if (getsockopt(sock->socketdes, SOL_SOCKET, SO_DEBUG, (char *) &optval, &optlen) == -1) {
+            return APR_OS2_STATUS(sock_errno());
+        } else *on = (optval > 0);
     }
+    if (opt & APR_SO_KEEPALIVE) {
+        if (getsockopt(sock->socketdes, SOL_SOCKET, SO_KEEPALIVE, (char *) &optval, &optlen) == -1) {
+            return APR_OS2_STATUS(sock_errno());
+        } else *on = (optval > 0);
+    }
+    if (opt & APR_SO_LINGER) {
+        if (getsockopt(sock->socketdes, SOL_SOCKET, SO_LINGER, (char *) &li, (int *)sizeof(struct linger)) == -1) {
+            return APR_OS2_STATUS(sock_errno());
+        } else *on = (li.l_onoff > 0);
+    }
+    if (opt & APR_SO_REUSEADDR) {
+        if (getsockopt(sock->socketdes, SOL_SOCKET, SO_REUSEADDR, (char *) &optval, &optlen) == -1) {
+            return APR_OS2_STATUS(sock_errno());
+        } else *on = (optval > 0);
+    }
+    if (opt & APR_SO_SNDBUF) {
+        if (getsockopt(sock->socketdes, SOL_SOCKET, SO_SNDBUF, (char *) &on, &optlen) == -1) {
+            return APR_OS2_STATUS(sock_errno());
+        }
+    }
+    if (opt & APR_SO_RCVBUF) {
+        if (getsockopt(sock->socketdes, SOL_SOCKET, SO_RCVBUF, (char *) &on, &optlen) == -1) {
+            return APR_OS2_STATUS(sock_errno());
+        }
+    }
+    /* have to base this on receive timeout ??? */
+    if (opt & APR_SO_NONBLOCK) {
+        return APR_ENOTIMPL;
+    }
+    /* Windows only ? */
+    if (opt & APR_SO_DISCONNECTED) {
+        return APR_ENOTIMPL;
+    }
+
     return APR_SUCCESS;
 }
 
