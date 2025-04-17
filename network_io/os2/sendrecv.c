@@ -21,6 +21,7 @@
 #include "apr_lib.h"
 #include <sys/time.h>
 #include <stdlib.h>
+int	 usleep(useconds_t);
 
 APR_DECLARE(apr_status_t) apr_socket_send(apr_socket_t *sock, const char *buf,
                                           apr_size_t *len)

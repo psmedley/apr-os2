@@ -21,7 +21,10 @@
 #include "apr_support.h"
 #include "apr_lib.h"
 #include <sys/time.h>
-
+#define htonl(x)   __htonl(x)
+#define htons(x)   __htons(x)
+#define ntohl(x)   __ntohl(x)
+#define ntohs(x)   __ntohs(x)
 
 APR_DECLARE(apr_status_t) apr_socket_sendto(apr_socket_t *sock, 
                                             apr_sockaddr_t *where,

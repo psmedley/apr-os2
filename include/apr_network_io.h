@@ -121,7 +121,7 @@ typedef enum {
 #define APR_IPV4_ADDR_OK  0x01  /**< @see apr_sockaddr_info_get() */
 #define APR_IPV6_ADDR_OK  0x02  /**< @see apr_sockaddr_info_get() */
 
-#if (!APR_HAVE_IN_ADDR)
+#if (!APR_HAVE_IN_ADDR) && !defined(__OS2__)
 /**
  * We need to make sure we always have an in_addr type, so APR will just
  * define it ourselves, if the platform doesn't provide it.

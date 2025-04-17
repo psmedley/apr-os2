@@ -47,6 +47,14 @@ struct apr_ipsubnet_t {
 #endif
 };
 
+#ifdef __OS2__
+#define htonl(x)   __htonl(x)
+#define htons(x)   __htons(x)
+#define ntohl(x)   __ntohl(x)
+#define ntohs(x)   __ntohs(x)
+#include <arpa/inet.h>
+#endif
+
 #if !defined(NETWARE) && !defined(WIN32)
 #ifdef HAVE_SET_H_ERRNO
 #define SET_H_ERRNO(newval) set_h_errno(newval)

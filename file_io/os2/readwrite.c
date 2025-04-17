@@ -355,12 +355,62 @@ APR_DECLARE(apr_status_t) apr_file_flush(apr_file_t *thefile)
 
 APR_DECLARE(apr_status_t) apr_file_sync(apr_file_t *thefile)
 {
-    return APR_ENOTIMPL;
+    apr_status_t rv = APR_SUCCESS;
+
+    file_lock(thefile);
+
+    if (thefile->buffered) {
+        rv = apr_file_flush_locked(thefile);
+
+        if (rv != APR_SUCCESS) {
+            file_unlock(thefile);
+            return rv;
+        }
+    }
+
+    if (fsync(thefile->filedes)) {
+        rv = apr_get_os_error();
+    }
+
+    file_unlock(thefile);
+
+    return rv;
 }
 
 APR_DECLARE(apr_status_t) apr_file_datasync(apr_file_t *thefile)
 {
-    return APR_ENOTIMPL;
+    apr_status_t rv = APR_SUCCESS;
+    int os_status = 0;
+
+    file_lock(thefile);
+
+    if (thefile->buffered) {
+        rv = apr_file_flush_locked(thefile);
+
+        if (rv != APR_SUCCESS) {
+            file_unlock(thefile);
+            return rv;
+        }
+    }
+
+#ifdef HAVE_FDATASYNC
+    os_status = fdatasync(thefile->filedes);
+#elif defined(F_FULLFSYNC)
+    os_status = fcntl(thefile->filedes, F_FULLFSYNC);
+    if (os_status) {
+        /* Fall back to fsync() if the device doesn't support F_FULLFSYNC. */
+        os_status = fsync(thefile->filedes);
+    }
+#else
+    os_status = fsync(thefile->filedes);
+#endif
+    if (os_status) {
+        rv = apr_get_os_error();
+    }
+
+    file_unlock(thefile);
+
+    return rv;
 }
 
 APR_DECLARE(apr_status_t) apr_file_gets(char *str, int len, apr_file_t *thefile)

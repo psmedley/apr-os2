@@ -25,6 +25,9 @@
 #ifdef HAVE_DLFCN_H
 #include <dlfcn.h>
 #endif
+#ifdef __OS2__
+#include <libcx/net.h>
+#endif
 
 /*
  * stuffbuffer - like apr_cpystrn() but returns the address of the

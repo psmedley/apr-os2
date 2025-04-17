@@ -29,6 +29,10 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include "apr_arch_os2calls.h"
+#define htonl(x)   __htonl(x)
+#define htons(x)   __htons(x)
+#define ntohl(x)   __ntohl(x)
+#define ntohs(x)   __ntohs(x)
 
 static apr_status_t socket_cleanup(void *sock)
 {
