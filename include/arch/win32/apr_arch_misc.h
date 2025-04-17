@@ -110,7 +110,11 @@ typedef enum {
     APR_WIN_XP_SP2 =   62,
     APR_WIN_2003 =     70,
     APR_WIN_VISTA =    80,
-    APR_WIN_7 =        90
+    APR_WIN_7 =        90,
+    APR_WIN_7_SP1 =    91,
+    APR_WIN_8  =       100,
+    APR_WIN_8_1 =      110,
+    APR_WIN_10 =       120
 } apr_oslevel_e;
 
 extern APR_DECLARE_DATA apr_oslevel_e apr_os_level;
@@ -194,15 +198,16 @@ FARPROC apr_load_dll_func(apr_dlltoken_e fnLib, char *fnName, int ordinal);
  */
 #define APR_DECLARE_LATE_DLL_FUNC(lib, rettype, calltype, fn, ord, args, names) \
     typedef rettype (calltype *apr_winapi_fpt_##fn) args; \
-    static apr_winapi_fpt_##fn apr_winapi_pfn_##fn = NULL; \
-    static int apr_winapi_chk_##fn = 0; \
+    static volatile apr_winapi_fpt_##fn apr_winapi_pfn_##fn = (apr_winapi_fpt_##fn) (ULONG_PTR) (-1); \
     static APR_INLINE int apr_winapi_ld_##fn(void) \
-    {   if (apr_winapi_pfn_##fn) return 1; \
-        if (apr_winapi_chk_##fn ++) return 0; \
-        if (!apr_winapi_pfn_##fn) \
-            apr_winapi_pfn_##fn = (apr_winapi_fpt_##fn) \
-                                      apr_load_dll_func(lib, #fn, ord); \
-        if (apr_winapi_pfn_##fn) return 1; else return 0; }; \
+    {   \
+        apr_winapi_fpt_##fn cached_func = apr_winapi_pfn_##fn; \
+        if (cached_func == (apr_winapi_fpt_##fn) (ULONG_PTR) (-1)) { \
+            cached_func = (apr_winapi_fpt_##fn) apr_load_dll_func(lib, #fn, ord); \
+            /* Pointer-sized writes are atomic on Windows. */ \
+            apr_winapi_pfn_##fn = cached_func; \
+        } \
+        if (cached_func) return 1; else return 0; }; \
     static APR_INLINE rettype apr_winapi_##fn args \
     {   if (apr_winapi_ld_##fn()) \
             return (*(apr_winapi_pfn_##fn)) names; \
@@ -486,6 +491,7 @@ APR_DECLARE_LATE_DLL_FUNC(DLL_WINBASEAPI, BOOL, WINAPI, SetDllDirectoryW, 0, (
     (lpPathName));
 #define SetDllDirectoryW apr_winapi_SetDllDirectoryW
 
+#if HAVE_IF_NAMETOINDEX
 #ifdef if_nametoindex
 #undef if_nametoindex
 #endif
@@ -493,7 +499,9 @@ APR_DECLARE_LATE_DLL_FUNC(DLL_IPHLPAPI, NET_IFINDEX, WINAPI, if_nametoindex, 0, 
     IN PCSTR InterfaceName),
     (InterfaceName));
 #define if_nametoindex apr_winapi_if_nametoindex
+#endif
 
+#if HAVE_IF_INDEXTONAME
 #ifdef if_indextoname
 #undef if_indextoname
 #endif
@@ -502,6 +510,7 @@ APR_DECLARE_LATE_DLL_FUNC(DLL_IPHLPAPI, PCHAR, NETIOAPI_API_, if_indextoname, 0,
     PCHAR       InterfaceName),
     (InterfaceIndex, InterfaceName));
 #define if_indextoname apr_winapi_if_indextoname
+#endif
 
 #endif /* !defined(_WIN32_WCE) */
 

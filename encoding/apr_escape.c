@@ -131,7 +131,7 @@ static char x2c(const char *what)
     xstr[2]=what[0];
     xstr[3]=what[1];
     xstr[4]='\0';
-    digit = ENCODE_TO_NATIVE[0xFF & strtol(xstr, NULL, 16)];
+    digit = TO_NATIVE(strtol(xstr, NULL, 16));
 #endif /*APR_CHARSET_EBCDIC*/
     return (digit);
 }
@@ -571,7 +571,7 @@ APR_DECLARE(apr_status_t) apr_escape_entity(char *escaped, const char *str,
                     found = 1;
                 }
                 else if (toasc && !apr_isascii(c)) {
-                    int offset = apr_snprintf((char *) d, 6, "&#%3.3d;", c);
+                    int offset = apr_snprintf((char *) d, 7, "&#%3.3d;", c);
                     size += offset;
                     d += offset;
                     found = 1;
@@ -613,8 +613,7 @@ APR_DECLARE(apr_status_t) apr_escape_entity(char *escaped, const char *str,
                     found = 1;
                 }
                 else if (toasc && !apr_isascii(c)) {
-                    char buf[8];
-                    size += apr_snprintf(buf, 6, "&#%3.3d;", c);
+                    size += apr_snprintf(NULL, 0, "&#%3.3d;", c);
                     found = 1;
                 }
                 else {
@@ -716,7 +715,7 @@ APR_DECLARE(apr_status_t) apr_unescape_entity(char *unescaped, const char *str,
                         size--;
                     }
                     else {
-                        *d = ENCODE_TO_ASCII(val);
+                        *d = TO_ASCII(val);
                         found = 1;
                     }
                 }
@@ -737,7 +736,7 @@ APR_DECLARE(apr_status_t) apr_unescape_entity(char *unescaped, const char *str,
                         *d = '&'; /* unknown */
                     }
                     else {
-                        *d = ENCODE_TO_ASCII(((const unsigned char *) ents)[j]);
+                        *d = TO_ASCII(ents[j]);
                         s += i;
                         slen -= i;
                         found = 1;
