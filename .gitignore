@@ -2,3 +2,7 @@
 *.diff
 *.log
 *.orig
+*.o
+*.lo
+*.lib
+*.la
