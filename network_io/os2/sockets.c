@@ -107,9 +107,7 @@ APR_DECLARE(apr_status_t) apr_socket_create(apr_socket_t **new, int family, int 
         break;
     case APR_PROTO_SCTP:
     default:
-        errno = EPROTONOSUPPORT;
-        (*new)->socketdes = -1;
-        break;
+        return APR_FROM_OS_ERROR(SOCEPROTONOSUPPORT);
     }
 
     if ((*new)->socketdes < 0) {
@@ -190,6 +188,20 @@ APR_DECLARE(apr_status_t) apr_socket_accept(apr_socket_t **new,
     *(*new)->local_addr = *sock->local_addr;
     (*new)->local_addr->pool = connection_context;
     (*new)->remote_addr->port = ntohs((*new)->remote_addr->sa.sin.sin_port);
+
+    if (sock->local_port_unknown) {
+        /* not likely for a listening socket, but theoretically possible :) */
+        (*new)->local_port_unknown = 1;
+    }
+
+    /* If the listener was bound to INADDR_ANY the actual local interface
+     * of the connection is unknown until getsockname() is called;
+     * otherwise apr_socket_addr_get(APR_LOCAL) would report 0.0.0.0.
+     */
+    if (sock->local_interface_unknown ||
+        sock->local_addr->sa.sin.sin_addr.s_addr == INADDR_ANY) {
+        (*new)->local_interface_unknown = 1;
+    }
 
     /* fix up any pointers which are no longer valid */
     if (sock->local_addr->sa.sin.sin_family == AF_INET) {

@@ -38,7 +38,7 @@ APR_DECLARE(apr_status_t) apr_socket_sendto(apr_socket_t *sock,
         rv = sendto(sock->socketdes, buf, (*len), flags, 
                     (struct sockaddr*)&where->sa,
                     where->salen);
-    } while (rv == -1 && (serrno = sock_errno()) == EINTR);
+    } while (rv == -1 && (serrno = sock_errno()) == SOCEINTR);
 
     if (rv == -1 && serrno == SOCEWOULDBLOCK && sock->timeout != 0) {
         apr_status_t arv = apr_wait_for_io_or_timeout(NULL, sock, 0);
@@ -77,7 +77,7 @@ APR_DECLARE(apr_status_t) apr_socket_recvfrom(apr_sockaddr_t *from,
     do {
         rv = recvfrom(sock->socketdes, buf, (*len), flags, 
                       (struct sockaddr*)&from->sa, &from->salen);
-    } while (rv == -1 && (serrno = sock_errno()) == EINTR);
+    } while (rv == -1 && (serrno = sock_errno()) == SOCEINTR);
 
     if (rv == -1 && serrno == SOCEWOULDBLOCK && sock->timeout != 0) {
         apr_status_t arv = apr_wait_for_io_or_timeout(NULL, sock, 1);
@@ -89,7 +89,7 @@ APR_DECLARE(apr_status_t) apr_socket_recvfrom(apr_sockaddr_t *from,
             do {
                 rv = recvfrom(sock->socketdes, buf, *len, flags,
                               (struct sockaddr*)&from->sa, &from->salen);
-                } while (rv == -1 && (serrno = sock_errno()) == EINTR);
+                } while (rv == -1 && (serrno = sock_errno()) == SOCEINTR);
         }
     }
 

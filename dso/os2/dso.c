@@ -42,7 +42,7 @@ static apr_status_t dso_cleanup(void *thedso)
 
 APR_DECLARE(apr_status_t) apr_dso_load(apr_dso_handle_t **res_handle, const char *path, apr_pool_t *ctx)
 {
-    char failed_module[200];
+    char failed_module[200] = "";
     HMODULE handle;
     int rc;
 
@@ -116,13 +116,16 @@ APR_DECLARE(const char *) apr_dso_error(apr_dso_handle_t *dso, char *buffer, apr
     char message[200];
     apr_strerror(dso->load_error, message, sizeof(message));
 
+    /* failed_module may itself be up to 200 chars: don't strcat into
+     * the fixed size message buffer.
+     */
     if (dso->failed_module != NULL) {
-        strcat(message, " (");
-        strcat(message, dso->failed_module);
-        strcat(message, ")");
+        apr_snprintf(buffer, buflen, "%s (%s)", message, dso->failed_module);
+    }
+    else {
+        apr_cpystrn(buffer, message, buflen);
     }
 
-    apr_cpystrn(buffer, message, buflen);
     return buffer;
 }
 

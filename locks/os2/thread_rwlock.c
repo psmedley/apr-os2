@@ -89,6 +89,9 @@ APR_DECLARE(apr_status_t) apr_thread_rwlock_tryrdlock(apr_thread_rwlock_t *rwloc
 
     rc = DosRequestMutexSem(rwlock->write_lock, SEM_IMMEDIATE_RETURN);
 
+    if (rc == ERROR_TIMEOUT)
+        return APR_EBUSY;
+
     if (rc)
         return APR_FROM_OS_ERROR(rc);
 
@@ -132,6 +135,9 @@ APR_DECLARE(apr_status_t) apr_thread_rwlock_trywrlock(apr_thread_rwlock_t *rwloc
 
     rc = DosRequestMutexSem(rwlock->write_lock, SEM_IMMEDIATE_RETURN);
 
+    if (rc == ERROR_TIMEOUT)
+        return APR_EBUSY;
+
     if (rc)
         return APR_FROM_OS_ERROR(rc);
 
@@ -142,10 +148,10 @@ APR_DECLARE(apr_status_t) apr_thread_rwlock_trywrlock(apr_thread_rwlock_t *rwloc
     if (rwlock->readers) {
         /* There are readers active, give up */
         DosReleaseMutexSem(rwlock->write_lock);
-        rc = ERROR_TIMEOUT;
+        return APR_EBUSY;
     }
 
-    return APR_FROM_OS_ERROR(rc);
+    return APR_SUCCESS;
 }
 
 

@@ -27,7 +27,7 @@ static apr_status_t file_dup(apr_file_t **new_file, apr_file_t *old_file, apr_po
     apr_file_t *dup_file;
 
     if (*new_file == NULL) {
-        dup_file = (apr_file_t *)apr_palloc(p, sizeof(apr_file_t));
+        dup_file = (apr_file_t *)apr_pcalloc(p, sizeof(apr_file_t));
 
         if (dup_file == NULL) {
             return APR_ENOMEM;
@@ -52,6 +52,26 @@ static apr_status_t file_dup(apr_file_t **new_file, apr_file_t *old_file, apr_po
     /* TODO - dup pipes correctly */
     dup_file->pipe = old_file->pipe;
     dup_file->ungetchar = old_file->ungetchar;
+    dup_file->timeout = old_file->timeout;
+    dup_file->blocking = old_file->blocking;
+    dup_file->eof_hit = old_file->eof_hit;
+
+    /* A buffered duplicate needs its own buffer and mutex */
+    if (dup_file->buffered) {
+        if (dup_file->buffer == NULL) {
+            dup_file->bufsize = old_file->bufsize ? old_file->bufsize
+                                                  : APR_FILE_DEFAULT_BUFSIZE;
+            dup_file->buffer = apr_palloc(p, dup_file->bufsize);
+        }
+        dup_file->bufpos = 0;
+        dup_file->dataRead = 0;
+        dup_file->direction = 0;
+        if (dup_file->mutex == NULL) {
+            rv = apr_thread_mutex_create(&dup_file->mutex, 0, p);
+            if (rv != APR_SUCCESS)
+                return rv;
+        }
+    }
 
     if (*new_file == NULL) {
         apr_pool_cleanup_register(dup_file->pool, dup_file, apr_file_cleanup,
