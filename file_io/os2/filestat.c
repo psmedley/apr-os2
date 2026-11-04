@@ -224,15 +224,14 @@ APR_DECLARE(apr_status_t) apr_file_info_get(apr_finfo_t *finfo, apr_int32_t want
 
     if (rc == 0) {
         FS3_to_finfo(finfo, &fstatus);
+        finfo->pool = thefile->pool;
         finfo->fname = thefile->fname;
 
-        if (finfo->filetype == APR_REG) {
-            if (thefile->isopen) {
-                return handle_type(&finfo->filetype, thefile->filedes);
-            }
-        } else {
-            return APR_SUCCESS;
+        if (finfo->filetype == APR_REG && thefile->isopen) {
+            return handle_type(&finfo->filetype, thefile->filedes);
         }
+
+        return APR_SUCCESS;
     }
 
     finfo->protection = 0;
@@ -284,22 +283,31 @@ APR_DECLARE(apr_status_t) apr_stat(apr_finfo_t *finfo, const char *fname,
     rc = DosQueryPathInfo(newfname, FIL_STANDARD, &fstatus, sizeof(fstatus));
     if (rc == 0) {
         FS3_to_finfo(finfo, &fstatus);
+        finfo->pool = cont;
         finfo->fname = fname;
 
         if (wanted & APR_FINFO_NAME) {
             ULONG count = 1;
-            HDIR hDir = HDIR_SYSTEM;
+            /* HDIR_SYSTEM is shared by every thread in the process, so
+             * allocate a private search handle and close it afterwards.
+             */
+            HDIR hDir = HDIR_CREATE;
             FILEFINDBUF3 ffb;
-            rc = DosFindFirst(fname, &hDir,
+            rc = DosFindFirst(newfname, &hDir,
                               FILE_DIRECTORY|FILE_HIDDEN|FILE_SYSTEM|FILE_ARCHIVED,
                               &ffb, sizeof(ffb), &count, FIL_STANDARD);
-            if (rc == 0 && count == 1) {
-                finfo->name = apr_pstrdup(cont, ffb.achName);
-                finfo->valid |= APR_FINFO_NAME;
+            if (rc == 0) {
+                if (count == 1) {
+                    finfo->name = apr_pstrdup(cont, ffb.achName);
+                    finfo->valid |= APR_FINFO_NAME;
+                }
+                DosFindClose(hDir);
             }
         }
     } else if (rc == ERROR_INVALID_ACCESS) {
         memset(finfo, 0, sizeof(apr_finfo_t));
+        finfo->pool = cont;
+        finfo->fname = fname;
         finfo->valid = APR_FINFO_TYPE | APR_FINFO_PROT;
         finfo->protection = 0666;
         finfo->filetype = APR_CHR;

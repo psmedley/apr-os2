@@ -53,13 +53,16 @@ static int os2_fn_link()
     if (apr_os2_socket == os2_socket_init) {
         ULONG rc;
         char errorstr[200];
+        int (*pfn_socket)(int, int, int) = NULL;
 
         rc = DosLoadModule(errorstr, sizeof(errorstr), "SO32DLL", &hSO32DLL);
 
-        if (rc)
+        if (rc) {
+            DosExitCritSec();
             return APR_OS2_STATUS(rc);
+        }
 
-        rc = DosQueryProcAddr(hSO32DLL, 0, "SOCKET", &apr_os2_socket);
+        rc = DosQueryProcAddr(hSO32DLL, 0, "SOCKET", (PFN *)&pfn_socket);
 
         if (!rc)
             rc = DosQueryProcAddr(hSO32DLL, 0, "SELECT", &apr_os2_select);
@@ -115,8 +118,15 @@ static int os2_fn_link()
         if (!rc)
             rc = DosQueryProcAddr(hSO32DLL, 0, "RECVFROM", &apr_os2_recvfrom);
 
-        if (rc)
+        if (rc) {
+            DosExitCritSec();
             return APR_OS2_STATUS(rc);
+        }
+
+        /* Publish SOCKET last: until every entry point is resolved,
+         * apr_os2_socket must keep pointing at os2_socket_init.
+         */
+        apr_os2_socket = pfn_socket;
     }
 
     DosExitCritSec();
@@ -132,13 +142,16 @@ static int os2_fn_link()
     if (apr_os2_socket == os2_socket_init) {
         ULONG rc;
         char errorstr[200];
+        int (*pfn_socket)(int, int, int) = NULL;
 
         rc = DosLoadModule(errorstr, sizeof(errorstr), "TCPIP32", &hTCPIP32);
 
-        if (rc)
+        if (rc) {
+            DosExitCritSec();
             return APR_OS2_STATUS(rc);
+        }
 
-        rc = DosQueryProcAddr(hTCPIP32, 0, "SOCKET", &apr_os2_socket);
+        rc = DosQueryProcAddr(hTCPIP32, 0, "SOCKET", (PFN *)&pfn_socket);
 
         if (!rc)
             rc = DosQueryProcAddr(hTCPIP32, 0, "OS2_SELECT", &apr_os2_select);
@@ -194,18 +207,37 @@ static int os2_fn_link()
         if (!rc)
             rc = DosQueryProcAddr(hTCPIP32, 0, "RECVFROM", &apr_os2_recvfrom);
 
-        if (rc)
+        if (rc) {
+            DosExitCritSec();
             return APR_OS2_STATUS(rc);
+        }
+
+        /* Publish SOCKET last: until every entry point is resolved,
+         * apr_os2_socket must keep pointing at os2_socket_init.
+         */
+        apr_os2_socket = pfn_socket;
     }
 
     DosExitCritSec();
     return APR_SUCCESS;
 }
 #endif
+static int os2_sock_errno_stub(void)
+{
+    /* TCP/IP stack DLL could not be loaded */
+    return SOCEOS2ERR;
+}
+
 static int os2_socket_init(int domain, int type, int protocol)
 {
     int rc = os2_fn_link();
     if (rc == APR_SUCCESS)
         return apr_os2_socket(domain, type, protocol);
-    return rc;
+
+    /* Callers test for a negative descriptor and then call sock_errno(),
+     * so never return the (positive) APR status as a "socket".
+     */
+    if (apr_os2_sock_errno == NULL)
+        apr_os2_sock_errno = os2_sock_errno_stub;
+    return -1;
 }

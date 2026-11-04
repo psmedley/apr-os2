@@ -45,7 +45,7 @@ struct apr_file_t {
     HFILE filedes;
     int pipe;
     HEV pipeSem;
-    int timeout;
+    apr_interval_time_t timeout;  /* microseconds; an int overflows after ~35 min */
     apr_int32_t flags;
 
     /* File specific info */

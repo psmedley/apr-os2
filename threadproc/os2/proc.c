@@ -321,6 +321,7 @@ APR_DECLARE(apr_status_t) apr_proc_create(apr_proc_t *proc, const char *progname
     int env_len, e;
     char *env_block, *env_block_pos;
     RESULTCODES rescodes;
+    ULONG rc;
 
     proc->in = attr->parent_in;
     proc->err = attr->parent_err;
@@ -368,9 +369,8 @@ APR_DECLARE(apr_status_t) apr_proc_create(apr_proc_t *proc, const char *progname
         _getcwd2(savedir, sizeof(savedir));
         
         if (_chdir2(attr->currdir) < 0) {
-            if (criticalsection)
-                DosExitCritSec();
-            return errno;
+            status = errno;
+            goto restore_handles;
         }
     }
 
@@ -455,34 +455,40 @@ APR_DECLARE(apr_status_t) apr_proc_create(apr_proc_t *proc, const char *progname
         if (newprogname[i] == '/')
             newprogname[i] = '\\';
 
-    cmdlen = 0;
+    /* Quote the arguments first so that the buffer length is computed
+     * from the final (possibly quoted and quote-doubled) strings.
+     * The program name (newargs[0]) is passed unquoted as the first
+     * string of the DosExecPgm argument block.
+     */
+    for (i=1; i<numargs; i++) {
+        if (strpbrk(newargs[i], "&|<>\" "))
+            newargs[i] = apr_pstrcat(pool, "\"",
+                                     double_quotes(pool, newargs[i]),
+                                     "\"", NULL);
+    }
 
-    for (i=0; i<numargs; i++)
-        cmdlen += strlen(newargs[i]) + 3;
+    cmdlen = strlen(newargs[0]) + 1;
 
+    for (i=1; i<numargs; i++)
+        cmdlen += strlen(newargs[i]) + 1;
+
+    /* "program\0arguments\0\0" */
     cmdline = apr_palloc(pool, cmdlen + 2);
     cmdline_pos = cmdline;
 
-    for (i=0; i<numargs; i++) {
-        const char *a = newargs[i];
+    strcpy(cmdline_pos, newargs[0]);
+    cmdline_pos += strlen(cmdline_pos) + 1;
 
-        if (strpbrk(a, "&|<>\" "))
-            a = apr_pstrcat(pool, "\"", double_quotes(pool, a), "\"", NULL);
-
-        if (i)
+    for (i=1; i<numargs; i++) {
+        if (i > 1)
             *(cmdline_pos++) = ' ';
 
-        strcpy(cmdline_pos, a);
+        strcpy(cmdline_pos, newargs[i]);
         cmdline_pos += strlen(cmdline_pos);
     }
 
-    *(++cmdline_pos) = 0; /* Add required second terminator */
-    cmdline_pos = strchr(cmdline, ' ');
-
-    if (cmdline_pos) {
-        *cmdline_pos = 0;
-        cmdline_pos++;
-    }
+    *(cmdline_pos++) = 0;   /* terminate the argument string */
+    *cmdline_pos = 0;       /* add required second terminator */
 
     /* Create environment block from list of envariables */
     if (env) {
@@ -501,15 +507,24 @@ APR_DECLARE(apr_status_t) apr_proc_create(apr_proc_t *proc, const char *progname
     } else
         env_block = NULL;
 
-    status = DosExecPgm(error_object, sizeof(error_object),
-                        attr->detached ? EXEC_BACKGROUND : EXEC_ASYNCRESULT,
-                        cmdline, env_block, &rescodes, cmdline);
+    rc = DosExecPgm(error_object, sizeof(error_object),
+                    attr->detached ? EXEC_BACKGROUND : EXEC_ASYNCRESULT,
+                    cmdline, env_block, &rescodes, cmdline);
 
-    proc->pid = rescodes.codeTerminate;
+    if (rc == 0) {
+        proc->pid = rescodes.codeTerminate;
+        status = APR_SUCCESS;
+    } else {
+        proc->pid = -1;
+        status = APR_FROM_OS_ERROR(rc);
+    }
 
     if (attr->currdir != NULL) {
-        chdir(savedir);
+        /* _chdir2() also restores the current drive, chdir() does not */
+        _chdir2(savedir);
     }
+
+restore_handles:
 
     if (attr->child_in) {
 #if 0 /* try and fix cgi post issues */

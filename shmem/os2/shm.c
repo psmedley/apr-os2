@@ -113,7 +113,10 @@ APR_DECLARE(apr_status_t) apr_shm_attach(apr_shm_t **m,
 
     rc = DosGetNamedSharedMem(&(newm->memblock), name, flags);
     } else {
-        rc = DosGetSharedMem(&(newm->memblock), flags);
+        /* Unnamed (gettable) memory can only be attached by address,
+         * see apr_os_shm_put().
+         */
+        return APR_EINVAL;
     }
 
     if (rc) {
@@ -172,11 +175,14 @@ APR_DECLARE(apr_status_t) apr_os_shm_put(apr_shm_t **m,
 {
     int rc;
     apr_shm_t *newm = (apr_shm_t *)apr_palloc(pool, sizeof(apr_shm_t));
-    ULONG flags = PAG_COMMIT|PAG_READ|PAG_WRITE;
+    /* PAG_COMMIT is not a valid flag for DosGetSharedMem() */
+    ULONG flags = PAG_READ|PAG_WRITE;
 
     newm->pool = pool;
+    newm->memblock = *osshm;
 
-    rc = DosGetSharedMem(&(newm->memblock), flags);
+    /* DosGetSharedMem() takes the base address of the shared block */
+    rc = DosGetSharedMem(newm->memblock, flags);
 
     if (rc) {
         return APR_FROM_OS_ERROR(rc);
