@@ -126,7 +126,8 @@ APR_DECLARE(apr_status_t) apr_socket_opt_get(apr_socket_t *sock,
         } else *on = (optval > 0);
     }
     if (opt & APR_SO_LINGER) {
-        if (getsockopt(sock->socketdes, SOL_SOCKET, SO_LINGER, (char *) &li, (int *)sizeof(struct linger)) == -1) {
+        int lilen = sizeof(struct linger);
+        if (getsockopt(sock->socketdes, SOL_SOCKET, SO_LINGER, (char *) &li, &lilen) == -1) {
             return APR_OS2_STATUS(sock_errno());
         } else *on = (li.l_onoff > 0);
     }
@@ -136,18 +137,17 @@ APR_DECLARE(apr_status_t) apr_socket_opt_get(apr_socket_t *sock,
         } else *on = (optval > 0);
     }
     if (opt & APR_SO_SNDBUF) {
-        if (getsockopt(sock->socketdes, SOL_SOCKET, SO_SNDBUF, (char *) &on, &optlen) == -1) {
+        if (getsockopt(sock->socketdes, SOL_SOCKET, SO_SNDBUF, (char *) &optval, &optlen) == -1) {
             return APR_OS2_STATUS(sock_errno());
-        }
+        } else *on = optval;
     }
     if (opt & APR_SO_RCVBUF) {
-        if (getsockopt(sock->socketdes, SOL_SOCKET, SO_RCVBUF, (char *) &on, &optlen) == -1) {
+        if (getsockopt(sock->socketdes, SOL_SOCKET, SO_RCVBUF, (char *) &optval, &optlen) == -1) {
             return APR_OS2_STATUS(sock_errno());
-        }
+        } else *on = optval;
     }
-    /* have to base this on receive timeout ??? */
     if (opt & APR_SO_NONBLOCK) {
-        return APR_ENOTIMPL;
+        *on = sock->nonblock;
     }
     /* Windows only ? */
     if (opt & APR_SO_DISCONNECTED) {

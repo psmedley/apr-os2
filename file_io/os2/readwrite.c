@@ -31,26 +31,31 @@ APR_DECLARE(apr_status_t) apr_file_read(apr_file_t *thefile, void *buf, apr_size
 {
     ULONG rc = 0;
     ULONG bytes_read = 0;
+    apr_size_t req = *len;
 
     if (*len <= 0) {
         *len = 0;
         return APR_SUCCESS;
     }
-#if 1
-    /* Handle the ungetchar if there is one */
-    /* copied from win32/readwrite.c */
+
+    /* Handle the ungetchar if there is one (copied from win32/readwrite.c).
+     * The pushed back byte is delivered first and must be included in the
+     * byte count returned to the caller.
+     */
     if (thefile->ungetchar != -1) {
         bytes_read = 1;
         *(char *)buf = (char)thefile->ungetchar;
-        buf = (char *)buf + 1;
-        (*len)--;
         thefile->ungetchar = -1;
-        if (*len == 0) {
-            *len = bytes_read;
+        if (req == 1) {
+            *len = 1;
             return APR_SUCCESS;
         }
+        *len = req - 1;
+        (void)apr_file_read(thefile, (char *)buf + 1, len);
+        *len += bytes_read;
+        /* We already delivered a byte; report EOF/errors on the next call */
+        return APR_SUCCESS;
     }
-#endif
     if (thefile->buffered) {
         char *pos = (char *)buf;
         ULONG blocksize;
@@ -125,7 +130,8 @@ APR_DECLARE(apr_status_t) apr_file_read(apr_file_t *thefile, void *buf, apr_size
 		break;
 	    if (rc != ERROR_NO_DATA)
 		break;
-	    rc = DosWaitEventSem(thefile->pipeSem, thefile->timeout >= 0 ? thefile->timeout / 1000 : SEM_INDEFINITE_WAIT);
+	    /* round up so sub-millisecond timeouts don't become a no-wait poll */
+	    rc = DosWaitEventSem(thefile->pipeSem, thefile->timeout >= 0 ? (ULONG)((thefile->timeout + 999) / 1000) : SEM_INDEFINITE_WAIT);
 	    if (rc == ERROR_TIMEOUT) {
 		*len = 0;
                 return APR_TIMEUP;
@@ -162,10 +168,11 @@ APR_DECLARE(apr_status_t) apr_file_write(apr_file_t *thefile, const void *buf, a
 
     if (thefile->buffered) {
         char *pos = (char *)buf;
-        int blocksize;
-        int size = *nbytes;
- 
-       apr_thread_mutex_lock(thefile->mutex);
+        apr_size_t blocksize;
+        apr_size_t size = *nbytes;
+        apr_status_t rv = APR_SUCCESS;
+
+        apr_thread_mutex_lock(thefile->mutex);
 
         if ( thefile->direction == 0 ) {
             /* Position file pointer for writing at the offset we are logically reading from */
@@ -176,21 +183,23 @@ APR_DECLARE(apr_status_t) apr_file_write(apr_file_t *thefile, const void *buf, a
             thefile->direction = 1;
         }
 
-        while (rc == 0 && size > 0) {
-	    if (thefile->bufpos == thefile->bufsize){ /* write buffer is full */
-                /* XXX bug; - rc is double-transformed os->apr below */
-                rc = apr_file_flush(thefile);
-		}
-	    blocksize = size > thefile->bufsize - thefile->bufpos ? 
-	                       thefile->bufsize - thefile->bufpos : size;
+        while (rv == APR_SUCCESS && size > 0) {
+            if (thefile->bufpos == thefile->bufsize) { /* write buffer is full */
+                rv = apr_file_flush(thefile);
+                if (rv != APR_SUCCESS)
+                    break;
+            }
+            blocksize = size > thefile->bufsize - thefile->bufpos ?
+                               thefile->bufsize - thefile->bufpos : size;
             memcpy(thefile->buffer + thefile->bufpos, pos, blocksize);
             thefile->bufpos += blocksize;
             pos += blocksize;
             size -= blocksize;
         }
 
+        *nbytes = pos - (char *)buf;
         apr_thread_mutex_unlock(thefile->mutex);
-        return APR_FROM_OS_ERROR(rc);
+        return rv;
     } else {
         void *pvBuf_safe = NULL;
 
@@ -205,8 +214,8 @@ APR_DECLARE(apr_status_t) apr_file_write(apr_file_t *thefile, const void *buf, a
                 pvBuf_safe = _tmalloc(*nbytes);
                 if (!pvBuf_safe)
                 {
-                    errno = ENOMEM;
-	            return APR_FROM_OS_ERROR(errno);
+                    *nbytes = 0;
+                    return APR_ENOMEM;
                 }
                 memcpy(pvBuf_safe, buf, *nbytes);
                 buf = pvBuf_safe;
@@ -337,11 +346,30 @@ APR_DECLARE(apr_status_t) apr_file_flush(apr_file_t *thefile)
         int rc = 0;
 
         if (thefile->direction == 1 && thefile->bufpos) {
-            rc = DosWrite(thefile->filedes, thefile->buffer, thefile->bufpos, &written);
-            thefile->filePtr += written;
+            apr_size_t offset = 0;
 
-            if (rc == 0)
+            while (offset < thefile->bufpos) {
+                rc = DosWrite(thefile->filedes, thefile->buffer + offset,
+                              thefile->bufpos - offset, &written);
+                if (rc)
+                    break;
+                thefile->filePtr += written;
+                offset += written;
+                if (written == 0)
+                    break;          /* e.g. disk full */
+            }
+
+            if (offset < thefile->bufpos) {
+                /* Keep the unwritten data so it isn't lost */
+                memmove(thefile->buffer, thefile->buffer + offset,
+                        thefile->bufpos - offset);
+                thefile->bufpos -= offset;
+                if (rc == 0)
+                    return APR_ENOSPC;
+            }
+            else {
                 thefile->bufpos = 0;
+            }
         }
 
         return APR_FROM_OS_ERROR(rc);

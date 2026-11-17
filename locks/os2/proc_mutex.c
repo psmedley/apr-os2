@@ -25,6 +25,19 @@
 
 #define CurrentTid (*_threadid)
 
+/* If the process owning the semaphore died while holding it, OS/2 hands
+ * ownership to the caller and returns ERROR_SEM_OWNER_DIED.  The lock *is*
+ * held in that case, so treat it as success; otherwise lock_count/owner
+ * are never updated, unlock becomes a no-op and the mutex stays locked
+ * forever (e.g. after an httpd child crash).
+ */
+static ULONG request_mutex(HMTX hMutex, ULONG timeout)
+{
+    ULONG rc = DosRequestMutexSem(hMutex, timeout);
+
+    return (rc == ERROR_SEM_OWNER_DIED) ? 0 : rc;
+}
+
 static char *fixed_name(const char *fname, apr_pool_t *pool)
 {
     char *semname;
@@ -144,7 +157,7 @@ APR_DECLARE(apr_status_t) apr_proc_mutex_child_init(apr_proc_mutex_t **mutex,
 
 APR_DECLARE(apr_status_t) apr_proc_mutex_lock(apr_proc_mutex_t *mutex)
 {
-    ULONG rc = DosRequestMutexSem(mutex->hMutex, SEM_INDEFINITE_WAIT);
+    ULONG rc = request_mutex(mutex->hMutex, SEM_INDEFINITE_WAIT);
 
     if (rc == 0) {
         mutex->owner = CurrentTid;
@@ -158,7 +171,7 @@ APR_DECLARE(apr_status_t) apr_proc_mutex_lock(apr_proc_mutex_t *mutex)
 
 APR_DECLARE(apr_status_t) apr_proc_mutex_trylock(apr_proc_mutex_t *mutex)
 {
-    ULONG rc = DosRequestMutexSem(mutex->hMutex, SEM_IMMEDIATE_RETURN);
+    ULONG rc = request_mutex(mutex->hMutex, SEM_IMMEDIATE_RETURN);
 
     if (rc == 0) {
         mutex->owner = CurrentTid;
@@ -176,10 +189,10 @@ APR_DECLARE(apr_status_t) apr_proc_mutex_timedlock(apr_proc_mutex_t *mutex,
     ULONG rc;
     
     if (timeout <= 0) {
-        rc = DosRequestMutexSem(mutex->hMutex, SEM_IMMEDIATE_RETURN);
+        rc = request_mutex(mutex->hMutex, SEM_IMMEDIATE_RETURN);
     }
     else {
-        rc = DosRequestMutexSem(mutex->hMutex, apr_time_as_msec(timeout));
+        rc = request_mutex(mutex->hMutex, apr_time_as_msec(timeout));
     }
 
     if (rc == 0) {

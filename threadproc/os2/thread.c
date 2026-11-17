@@ -45,7 +45,11 @@ APR_DECLARE(apr_status_t) apr_threadattr_create(apr_threadattr_t **new, apr_pool
 
 APR_DECLARE(apr_status_t) apr_threadattr_detach_set(apr_threadattr_t *attr, apr_int32_t on)
 {
-    attr->attr |= APR_THREADATTR_DETACHED;
+    if (on)
+        attr->attr |= APR_THREADATTR_DETACHED;
+    else
+        attr->attr &= ~APR_THREADATTR_DETACHED;
+
     return APR_SUCCESS;
 }
 
@@ -88,8 +92,9 @@ APR_DECLARE(apr_status_t) apr_thread_create(apr_thread_t **new, apr_threadattr_t
 {
     apr_status_t stat;
     apr_thread_t *thread;
- 
-    thread = (apr_thread_t *)apr_palloc(pool, sizeof(apr_thread_t));
+    int tid;
+
+    thread = (apr_thread_t *)apr_pcalloc(pool, sizeof(apr_thread_t));
     *new = thread;
 
     if (thread == NULL) {
@@ -113,14 +118,17 @@ APR_DECLARE(apr_status_t) apr_thread_create(apr_thread_t **new, apr_threadattr_t
         }
     }
 
-    thread->tid = _beginthread(apr_thread_begin, NULL, 
-                               thread->attr->stacksize > 0 ?
-                               thread->attr->stacksize : APR_THREAD_STACKSIZE,
-                               thread);
-        
-    if (thread->tid < 0) {
+    tid = _beginthread(apr_thread_begin, NULL,
+                       thread->attr->stacksize > 0 ?
+                       thread->attr->stacksize : APR_THREAD_STACKSIZE,
+                       thread);
+
+    /* tid is unsigned in apr_thread_t, so test the signed return value */
+    if (tid == -1) {
         return errno;
     }
+
+    thread->tid = tid;
 
     return APR_SUCCESS;
 }
@@ -267,7 +275,7 @@ APR_DECLARE(apr_status_t) apr_thread_once_init(apr_thread_once_t **control,
     ULONG rc;
     *control = (apr_thread_once_t *)apr_pcalloc(p, sizeof(apr_thread_once_t));
     rc = DosCreateEventSem(NULL, &(*control)->sem, 0, TRUE);
-    apr_pool_cleanup_register(p, control, thread_once_cleanup, apr_pool_cleanup_null);
+    apr_pool_cleanup_register(p, *control, thread_once_cleanup, apr_pool_cleanup_null);
     return APR_FROM_OS_ERROR(rc);
 }
 

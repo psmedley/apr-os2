@@ -144,7 +144,10 @@ APR_DECLARE(apr_status_t) apr_file_open(apr_file_t **new, const char *fname,
     if ((flag & APR_FOPEN_EXCL) && !(flag & APR_FOPEN_CREATE))
         return APR_EACCES;
 
-    if (flag & APR_FOPEN_TRUNCATE) {
+    /* APR_FOPEN_EXCL must fail on an existing file even if
+     * APR_FOPEN_TRUNCATE is also given.
+     */
+    if ((flag & APR_FOPEN_TRUNCATE) && !(flag & APR_FOPEN_EXCL)) {
         oflags |= OPEN_ACTION_REPLACE_IF_EXISTS;
     } else if ((oflags & 0xFF) == 0) {
         oflags |= OPEN_ACTION_OPEN_IF_EXISTS;
@@ -195,9 +198,12 @@ APR_DECLARE(apr_status_t) apr_file_open(apr_file_t **new, const char *fname,
 APR_DECLARE(apr_status_t) apr_file_close(apr_file_t *file)
 {
     ULONG rc,rv;
-    apr_status_t status;
-    
-    if (file && file->isopen) {
+    apr_status_t status = APR_SUCCESS;
+
+    if (file == NULL)
+        return APR_EBADF;
+
+    if (file->isopen) {
         /* XXX: flush here is not mutex protected */
         status = apr_file_flush(file);
 
@@ -213,7 +219,8 @@ APR_DECLARE(apr_status_t) apr_file_close(apr_file_t *file)
 
             if (file->flags & APR_FOPEN_DELONCLOSE) {
                 rv = DosDelete(file->fname);
-                if (rv != 32)
+                /* Don't let a successful delete hide a flush error */
+                if (rv != 0 && rv != ERROR_SHARING_VIOLATION)
                     status = APR_FROM_OS_ERROR(rv);
             }
             /* else we return the status of the flush attempt 
@@ -224,7 +231,7 @@ APR_DECLARE(apr_status_t) apr_file_close(apr_file_t *file)
         }
     }
 
-    if (file->buffered)
+    if (file->buffered && file->mutex)
         apr_thread_mutex_destroy(file->mutex);
 
     return status;

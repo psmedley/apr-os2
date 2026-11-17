@@ -195,14 +195,13 @@ APR_DECLARE(apr_status_t) apr_file_mktemp(apr_file_t **fp, char *template, apr_i
     fd = mkstemp(template);
 #endif
 
-#ifdef __INNOTEK_LIBC__
-          setmode(fd, O_BINARY);
-#endif 
-
-    
     if (fd == -1) {
         return errno;
     }
+
+#ifdef __INNOTEK_LIBC__
+    setmode(fd, O_BINARY);
+#endif
     /* XXX: We must reset several flags values as passed-in, since
      * mkstemp didn't subscribe to our preference flags.
      *

@@ -129,7 +129,7 @@ UCHAR randbyte()
 UCHAR randbyte()
 {
     int c;
-    UCHAR byte;
+    UCHAR byte = 0;
     ULONG ulrandom;
     ulrandom = random();
      

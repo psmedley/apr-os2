@@ -43,7 +43,8 @@ APR_DECLARE(apr_status_t) apr_pollset_create(apr_pollset_t **pollset,
                                              apr_pool_t *p,
                                              apr_uint32_t flags)
 {
-    *pollset = apr_palloc(p, sizeof(**pollset));
+    /* zeroed so that the wake_* members are NULL (wakeup unsupported) */
+    *pollset = apr_pcalloc(p, sizeof(**pollset));
     (*pollset)->pool = p;
     (*pollset)->nelts = 0;
     (*pollset)->nalloc = size;
