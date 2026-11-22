@@ -156,6 +156,13 @@ static char *apr_os_strerror(char* buf, apr_size_t bufsize, int err)
 {
   char result[200];
   unsigned char message[HUGE_STRING_LEN];
+  /* DosGetMessage is a 16-bit API, so every pointer passed to it must be
+   * below 512MB (16-bit tiled selectors).  A string literal lives in this
+   * module's data; when the module (e.g. HTTPD.DLL) is loaded into high
+   * memory the kernel traps in FIND_FILE scanning the name.  The stack is
+   * always low, so pass a copy from there (as message[] already is).
+   */
+  char msgfile[] = "OSO001.MSG";
   ULONG len;
   char *pos;
   int c;
@@ -165,7 +172,7 @@ static char *apr_os_strerror(char* buf, apr_size_t bufsize, int err)
                          strerror(apr_canonical_error(err+APR_OS_START_SYSERR)));
   } 
   else if (DosGetMessage(NULL, 0, message, HUGE_STRING_LEN, err,
-			 "OSO001.MSG", &len) == 0) {
+			 msgfile, &len) == 0) {
       len--;
       message[len] = 0;
       pos = result;
